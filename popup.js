@@ -212,6 +212,7 @@ function loadDetectedGames() {
           return;
         }
         const storeName = formatStoreName(resp.store);
+        scanBadge.style.display = '';
         scanBadge.textContent = `${resp.appIds.length} game${resp.appIds.length > 1 ? 's' : ''} found`;
         scanBadge.classList.remove('empty');
         showLoadingSpinner(detectedResults, `Fetching prices from GG.deals…`);
@@ -261,6 +262,7 @@ function waitForDetection(tabId, expectedCount) {
 }
 
 function showDetectedEmpty(icon, message) {
+  scanBadge.style.display = '';
   scanBadge.textContent = 'No page scanned';
   scanBadge.classList.add('empty');
   detectedResults.innerHTML = `<div class="empty"><span class="empty-icon">${icon}</span>${escapeHtml(message)}</div>`;
@@ -284,8 +286,7 @@ function friendlyError(err) {
 // ── Smart Deal Dashboard ─────────────────────────────────────────────────────
 
 function showDashboard() {
-  scanBadge.textContent = 'Dashboard';
-  scanBadge.classList.add('empty');
+  scanBadge.style.display = 'none';
 
   if (wishlist.length === 0) {
     detectedResults.innerHTML = `
@@ -479,10 +480,10 @@ function showDashboard() {
         subpriceHtml = `<div class="dashboard-mini-subprice">🔑 Keyshop: ${keyshop} ${g.currency}</div>`;
       }
 
-      // Extract image URL from GG.deals API response (g.game.info.image)
+      // Extract image URL from GG.deals API response, or fallback to exact Steam cover art
       const imgSrc = (g.game && g.game.info && g.game.info.image)
         ? g.game.info.image
-        : 'images/icon-48.png'; // Fallback
+        : `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.id}/header.jpg`;
 
       html += `<div class="dashboard-mini-card" data-action="searchGame" data-id="${g.id}">
         <img class="dashboard-mini-img" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(g.title)}">
@@ -688,7 +689,7 @@ function renderGameCard(id, game) {
 
   const imgSrc = (game.info && game.info.image)
     ? game.info.image
-    : 'images/icon-128.png'; // Fallback
+    : `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${id}/header.jpg`;
 
   return `<div class="game-card" data-game-id="${id}">
     <div class="game-card-body">
@@ -861,11 +862,8 @@ function displayWishlist() {
     const dateStr = new Date(item.addedDate).toLocaleDateString();
     const lastKnown = item.lastPrice != null ? `${item.lastPrice} ${item.lastCurrency || 'USD'}` : null;
 
-    // Attempt to resolve image if game was cached previously
-    const cachedGame = priceCache[regionSelect.value + ':' + item.id]?.data;
-    const imgSrc = (cachedGame && cachedGame.info && cachedGame.info.image)
-      ? cachedGame.info.image
-      : 'images/icon-48.png'; // Fallback
+    // Use Steam CDN for crisp, guaranteed game cover art
+    const imgSrc = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${item.id}/header.jpg`;
 
     html += `<div class="wishlist-item" data-wl-id="${item.id}">
       <div class="wishlist-header" data-wl-expand="${item.id}">
