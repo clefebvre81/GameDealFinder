@@ -21,6 +21,7 @@
     'www.gamersgate.com': detectGamersGate,
     'www.wingamestore.com': detectWinGameStore,
     'www.dlgamer.com': detectDLGamer,
+    'digiphile.co': detectDigiphile,
   };
 
   // ── Steam ──────────────────────────────────────────────────────────────────
@@ -519,6 +520,24 @@
       return { type: 'titles', titles: titles.slice(0, 5), store };
     }
     return null;
+  }
+
+  // ── Digiphile ──────────────────────────────────────────────────────────────
+
+  function detectDigiphile() {
+    // Digiphile heavily relies on direct "View on Steam" links that contain the App ID
+    const steamIds = extractSteamAppIdsFromLinks();
+    if (steamIds.length > 0) {
+      return { type: 'steam_ids', ids: steamIds.slice(0, 100), store: 'digiphile.co' };
+    }
+
+    // Fallback for game titles (covers bundles and individual pages)
+    const titles = safeCollectTitles('.card-title, .game-title, .product-title, h2', 50);
+    if (titles.length > 0) {
+      return { type: 'titles', titles, store: 'digiphile.co' };
+    }
+
+    return detectUniversalGame();
   }
 
   // ── Universal Detector (any website) ───────────────────────────────────────

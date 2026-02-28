@@ -828,6 +828,7 @@ function loadActiveBundles() {
       else if (s.includes('steam')) domain = 'steampowered.com';
       else if (s.includes('epic')) domain = 'epicgames.com';
       else if (s.includes('gog')) domain = 'gog.com';
+      else if (s.includes('digiphile')) domain = 'digiphile.co';
 
       // Use Google's S2 Favicon service which handles large 128px high-res favicons and doesn't 404 like icon.horse
       const storeLogoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;

@@ -33,7 +33,8 @@
         "https://isthereanydeal.com/*",
         "https://www.gamersgate.com/*",
         "https://www.wingamestore.com/*",
-        "https://www.dlgamer.com/*"
+        "https://www.dlgamer.com/*",
+        "https://digiphile.co/*"
       ],
       "js": [
         "content.js"
