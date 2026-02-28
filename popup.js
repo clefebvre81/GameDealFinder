@@ -807,21 +807,33 @@ function loadActiveBundles() {
         if (days > 0) expiryHtml = `<div class="bundle-expiry">⏰ ${days} day${days !== 1 ? 's' : ''} left</div>`;
       }
 
-      const imgSrc = (b.image) ? b.image : 'images/icon-128.png';
-
-      let storeLogoHtml = '';
-      if (b.shop) {
-        // Attempt to create a sleek store logo based on the shop name. Most key shops use their name as their .com domain.
-        // E.g., Fanatical -> fanatical.com 
-        const domain = b.shop.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
-        storeLogoHtml = `<img class="active-bundle-store-logo" src="https://icon.horse/icon/${domain}" title="${escapeHtml(b.shop)}" onerror="this.style.display='none'">`;
+      // The API embeds the store name in the title: "Fanatical - Build your own bundle"
+      let shopName = 'Store';
+      let bundleTitle = b.title;
+      const titleParts = b.title.split(' - ');
+      if (titleParts.length > 1) {
+        shopName = titleParts[0].trim();
+        bundleTitle = titleParts.slice(1).join(' - ').trim();
+      } else {
+        // Fallback for titles without dashes
+        shopName = b.title.split(' ')[0];
       }
+
+      // Convert shop name to a domain (e.g. "Humble Bundle" -> humblebundle.com)
+      const domain = shopName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+      const storeLogoUrl = `https://icon.horse/icon/${domain}`;
+
+      // Use the crisp store logo as the main image
+      const imgSrc = b.image || storeLogoUrl;
+
+      // Also create a tiny badge
+      const storeBadgeHtml = `<div class="active-bundle-store" style="display:flex;align-items:center;gap:4px;"><img src="${storeLogoUrl}" style="width:12px;height:12px;border-radius:2px;" onerror="this.style.display='none'">${escapeHtml(shopName)}</div>`;
 
       h += `<div class="active-bundle-card">
         <div class="active-bundle-body">
-          <img class="active-bundle-img" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(b.title)}" onerror="this.src='images/icon-128.png'">
+          <img class="active-bundle-img" style="background:#fff; padding:4px;" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(shopName)}" onerror="this.src='images/icon-128.png'">
           <div class="active-bundle-content">
-            <div class="active-bundle-header"><div class="active-bundle-title">${escapeHtml(b.title)}</div>${storeLogoHtml}</div>
+            <div class="active-bundle-header"><div class="active-bundle-title" style="margin-right:8px">${escapeHtml(bundleTitle)}</div>${storeBadgeHtml}</div>
             <div class="active-bundle-tiers">`;
 
       if (b.tiers) for (const t of b.tiers) h += `<div class="bundle-tier"><span class="bundle-price">${t.price} ${t.currency}</span> · ${t.gamesCount || '?'} game${(t.gamesCount || 0) > 1 ? 's' : ''}</div>`;
