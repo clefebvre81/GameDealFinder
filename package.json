@@ -1,0 +1,31 @@
+{
+  "name": "gg-buddy",
+  "version": "2.8.0",
+  "description": "A Chrome and Firefox extension that automatically compares PC game prices across 17+ stores using GG.deals",
+  "main": "background.js",
+  "scripts": {
+    "build": "node build-firefox.js",
+    "build-release": "node build-release.js",
+    "test": "node test-api.js && node test-bundles.js && node test-img.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "firefox-extension",
+    "game-prices",
+    "gg-deals",
+    "price-comparison"
+  ],
+  "author": "Sn3akySl0th",
+  "license": "MIT",
+  "devDependencies": {
+    "web-ext": "^7.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sn3akySl0th/gg-buddy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Sn3akySl0th/gg-buddy/issues"
+  },
+  "homepage": "https://github.com/Sn3akySl0th/gg-buddy#readme"
+}
