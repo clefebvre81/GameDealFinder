@@ -2,6 +2,8 @@
 node_modules/
 
 # Build artifacts
+dist/
+dist-firefox/
 *.zip
 *.crx
 *.pem
@@ -14,6 +16,7 @@ Desktop.ini
 # IDE
 .vscode/
 .idea/
+*.code-workspace
 *.swp
 *.swo
 
