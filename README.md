@@ -3,7 +3,7 @@
 A Chrome extension that automatically compares PC game prices across 17+ stores using [GG.deals](https://gg.deals). Never overpay for a game again.
 
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-blue?logo=googlechrome&logoColor=white)
-![Version](https://img.shields.io/badge/version-2.7.0-green)
+![Version](https://img.shields.io/badge/version-2.8.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Chrome Web Store listing
@@ -22,6 +22,8 @@ Copy the full store description from [`chrome-store-description.txt`](chrome-sto
 
 💜 **Wishlist & Alerts** — Track games and get notified when prices drop below your target. Export your list to the clipboard
 
+💾 **Cross-Browser Backup & Restore** — Export wishlist, alerts, preferences, API key, history, and custom images as JSON so you can move between Chrome and Firefox
+
 📦 **Bundle Finder & Calculator** — Discover active bundles and instantly see your exact percentage savings vs buying individually
 
 🧠 **Bundle Watchlist & Buy Recommendations** — Dashboard and wishlist cards now call out when a bundle is a better buy, when a game is near historical low, and when it is smarter to wait
@@ -38,7 +40,7 @@ Copy the full store description from [`chrome-store-description.txt`](chrome-sto
 
 🎨 **Full Customization** — 4 themes (Light/Dark/OLED/System), 7 accent colors, compact mode
 
-☁️ **Cross-Device Sync** — Wishlist and settings sync across Chrome instances
+☁️ **Browser Sync** — Wishlist and settings sync across installs of the same browser profile when supported
 
 🌐 **18 Languages** — Full UI localization (Czech, Danish, German, English, Spanish, Finnish, French, Italian, Japanese, Korean, Norwegian, Polish, Portuguese, Russian, Swedish, Ukrainian, Chinese Simplified)
 

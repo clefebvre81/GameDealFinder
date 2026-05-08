@@ -34,6 +34,10 @@ function t(key, ...subs) {
   return chrome.i18n.getMessage(key, subs) || key;
 }
 
+function tf(key, fallback, ...subs) {
+  return chrome.i18n.getMessage(key, subs) || fallback;
+}
+
 function initI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const msg = chrome.i18n.getMessage(el.getAttribute('data-i18n'));
@@ -1483,6 +1487,23 @@ function getBundleTierGameCount(bundle) {
   return bestTier?.gamesCount || null;
 }
 
+function parseBundleDate(value) {
+  if (!value || typeof value !== 'string') return null;
+  // Validate date format (YYYY-MM-DD or similar) to prevent injection
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return null;
+  const timestamp = new Date(value.trim() + ' UTC').getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isBundleActive(bundle, now = Date.now()) {
+  const startsAt = parseBundleDate(bundle?.dateFrom);
+  const endsAt = parseBundleDate(bundle?.dateTo);
+  if (startsAt !== null && startsAt > now) return false;
+  // Bundle is considered inactive when end time is reached (<=) to exclude bundles ending exactly now
+  if (endsAt !== null && endsAt <= now) return false;
+  return true;
+}
+
 function analyzeBundleComparison(bundles, bestPrice, currency) {
   if (bestPrice == null || isNaN(bestPrice) || !Array.isArray(bundles) || bundles.length === 0) {
     return { kind: 'none' };
@@ -1490,7 +1511,9 @@ function analyzeBundleComparison(bundles, bestPrice, currency) {
   let bestBundle = null;
   let bestTier = null;
   let bestTierPrice = Infinity;
+  const now = Date.now();
   for (const b of bundles) {
+    if (!isBundleActive(b, now)) continue;
     for (const tr of (b.tiers || [])) {
       const tierPrice = parseFloat(tr?.price);
       if (!isNaN(tierPrice) && tierPrice > 0 && tierPrice < bestTierPrice) {
@@ -1573,7 +1596,7 @@ function renderRecommendationBadge(recommendation) {
 function renderActiveBundles() {
   const container = document.getElementById('bundlesContent');
   if (!container) return;
-  const bundles = Array.isArray(activeBundlesData) ? activeBundlesData : [];
+  const bundles = Array.isArray(activeBundlesData) ? activeBundlesData.filter((b) => isBundleActive(b)) : [];
   if (bundles.length === 0) {
     container.innerHTML = `<div class="empty"><span class="empty-icon">📦</span>${escapeHtml(t('noActiveBundlesNow'))}</div>`;
     return;
@@ -2146,6 +2169,145 @@ function importWishlist(e) {
   reader.readAsText(file);
 }
 
+// ── Full Extension Backup / Restore ──
+
+const FULL_BACKUP_VERSION = 1;
+const SYNC_STORAGE_LIMIT = 7000; // Chrome sync storage quota limit in bytes
+
+function validateBackupData(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (!Array.isArray(data.wishlist)) return false;
+  if (data.priceHistory && typeof data.priceHistory !== 'object') return false;
+  if (data.notificationSettings && typeof data.notificationSettings !== 'object') return false;
+  if (data.userPrefs && typeof data.userPrefs !== 'object') return false;
+  if (data.recentSearches && !Array.isArray(data.recentSearches)) return false;
+  if (data.imageOverrides && typeof data.imageOverrides !== 'object') return false;
+  return true;
+}
+
+function downloadJsonFile(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function exportFullBackup() {
+  const manifest = chrome.runtime.getManifest?.() || {};
+  chrome.storage.local.get(['apiKey'], (stored) => {
+    if (chrome.runtime.lastError) {
+      showToast('Failed to access storage for backup', 'error');
+      return;
+    }
+    const backup = {
+      type: 'gg-buddy-backup',
+      schemaVersion: FULL_BACKUP_VERSION,
+      extensionVersion: manifest.version || 'unknown',
+      exportedAt: new Date().toISOString(),
+      note: 'This backup may include your GG.deals API key. Keep it private.',
+      data: {
+        wishlist,
+        priceHistory,
+        notificationSettings,
+        userPrefs,
+        recentSearches,
+        imageOverrides,
+        lastRegion: regionSelect?.value || userPrefs.region || 'us',
+        apiKey: stored.apiKey || null,
+      },
+    };
+    downloadJsonFile(backup, `gg-buddy-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    showToast(tf('backupExported', 'Backup exported'), 'success');
+  });
+}
+
+function restoreFullBackupData(data) {
+  wishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
+  priceHistory = data.priceHistory && typeof data.priceHistory === 'object' ? data.priceHistory : {};
+  notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object'
+    ? data.notificationSettings
+    : { enabled: false };
+  userPrefs = data.userPrefs && typeof data.userPrefs === 'object' ? { ...userPrefs, ...data.userPrefs } : userPrefs;
+  recentSearches = Array.isArray(data.recentSearches) ? data.recentSearches.filter((item) => typeof item === 'string').slice(0, 10) : [];
+  imageOverrides = data.imageOverrides && typeof data.imageOverrides === 'object' ? data.imageOverrides : {};
+
+  const lastRegion = String(data.lastRegion || userPrefs.region || 'us').toLowerCase();
+  const apiKey = typeof data.apiKey === 'string' && data.apiKey.trim() ? data.apiKey.trim() : null;
+  userPrefs.region = lastRegion;
+  if (regionSelect) regionSelect.value = lastRegion;
+  if (regionSettingSelect) regionSettingSelect.value = lastRegion;
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  if (apiKeyInput) apiKeyInput.value = apiKey || '';
+
+  chrome.storage.local.set({
+    wishlist,
+    priceHistory,
+    notificationSettings,
+    userPrefs,
+    recentSearches,
+    imageOverrides,
+    lastRegion,
+    apiKey,
+  }, () => {
+    if (chrome.runtime.lastError) {
+      showToast('Failed to restore backup to local storage', 'error');
+      return;
+    }
+    if (userPrefs.syncEnabled) {
+      try {
+        chrome.storage.sync.set({ userPrefs, notificationSettings, apiKey }).catch((err) => {
+          console.warn('Failed to sync settings:', err);
+        });
+        const wlStr = JSON.stringify(wishlist);
+        if (wlStr.length < SYNC_STORAGE_LIMIT) {
+          chrome.storage.sync.set({ wishlist }).catch((err) => {
+            console.warn('Failed to sync wishlist:', err);
+          });
+        }
+      } catch (err) {
+        console.warn('Sync unavailable:', err);
+      }
+    }
+    applyAllPrefs();
+    displaySettings();
+    if (document.getElementById('wishlistTab')?.classList.contains('active')) displayWishlist();
+    if (document.getElementById('dashboardTab')?.classList.contains('active')) renderCachedDashboard(null);
+    showToast(tf('backupImported', 'Backup imported'), 'success');
+  });
+}
+
+function importFullBackup(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      const data = parsed?.type === 'gg-buddy-backup' ? parsed.data : parsed;
+      if (!validateBackupData(data)) throw new Error('Invalid backup');
+      const ok = window.confirm(tf(
+        'backupImportConfirm',
+        'Importing this backup will replace your current GG Buddy wishlist, settings, alerts, history, custom images, and API key. Continue?'
+      ));
+      if (!ok) return;
+      restoreFullBackupData(data);
+    } catch {
+      showToast(tf('invalidBackupFile', 'Invalid backup file'), 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 function displaySettings() {
@@ -2278,6 +2440,11 @@ function wireSettings() {
       showToast(t('cloudSyncDisabled'), 'info');
     }
   });
+
+  // Clear cache
+  document.getElementById('exportBackupBtn')?.addEventListener('click', exportFullBackup);
+  document.getElementById('importBackupBtn')?.addEventListener('click', () => document.getElementById('importBackupInput')?.click());
+  document.getElementById('importBackupInput')?.addEventListener('change', importFullBackup);
 
   // Clear cache
   document.getElementById('clearCacheBtn').addEventListener('click', () => {

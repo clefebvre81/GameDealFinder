@@ -212,11 +212,14 @@
       <div class="settings-group">
         <h3>🧹 <span data-i18n="settingsMaintenance">Maintenance</span></h3>
         <div class="maintenance-actions">
+          <button class="btn-sm btn-outline" id="exportBackupBtn" data-i18n="exportBackup">Export Backup</button>
+          <button class="btn-sm btn-outline" id="importBackupBtn" data-i18n="importBackup">Import Backup</button>
           <button class="btn-sm btn-outline" id="clearCacheBtn" data-i18n="clearCache">Clear Cache</button>
           <button class="btn-sm btn-danger" id="clearHistoryBtn" data-i18n="clearHistory">Clear History</button>
           <button type="button" class="btn-sm btn-outline" id="viewChangelogBtn" data-i18n="viewChangelog">View changelog</button>
           <button type="button" class="btn-sm btn-outline" id="replayOnboardingBtn" data-i18n="onboardingReplay">Show welcome tour</button>
         </div>
+        <input type="file" id="importBackupInput" accept="application/json,.json" hidden />
       </div>
       <div class="settings-group support-card">
         <h3 class="support-title">☕ <span data-i18n="supportTitle">Support the Developer</span></h3>

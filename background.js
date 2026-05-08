@@ -17,6 +17,23 @@ let activeBundlesCache = { data: null, timestamp: 0 };
 let fxRateCache = {};
 const extensionAction = chrome.action || chrome.browserAction;
 
+function parseBundleDate(value) {
+  if (!value || typeof value !== 'string') return null;
+  // Validate date format (YYYY-MM-DD or similar) to prevent injection
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return null;
+  const timestamp = new Date(value.trim() + ' UTC').getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isBundleActive(bundle, now = Date.now()) {
+  const startsAt = parseBundleDate(bundle?.dateFrom);
+  const endsAt = parseBundleDate(bundle?.dateTo);
+  if (startsAt !== null && startsAt > now) return false;
+  // Bundle is considered inactive when end time is reached (<=) to exclude bundles ending exactly now
+  if (endsAt !== null && endsAt <= now) return false;
+  return true;
+}
+
 // ── Startup ──────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -380,7 +397,7 @@ async function handleGetActiveBundles(region, sendResponse) {
 
     if (json.success && json.data) {
       // API returns { data: { totalCount, bundles: [...] } }
-      const bundles = json.data.bundles || [];
+      const bundles = (json.data.bundles || []).filter((bundle) => isBundleActive(bundle));
       activeBundlesCache = { data: bundles, timestamp: Date.now() };
       sendResponse({ success: true, data: bundles, rateLimit });
     } else {

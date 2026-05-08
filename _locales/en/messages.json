@@ -56,6 +56,8 @@
   "statCachedPrices": { "message": "Cached prices" },
 
   "settingsMaintenance": { "message": "Maintenance" },
+  "exportBackup": { "message": "Export Backup" },
+  "importBackup": { "message": "Import Backup" },
   "clearCache": { "message": "Clear Cache" },
   "clearHistory": { "message": "Clear History" },
   "viewChangelog": { "message": "View changelog" },
@@ -336,6 +338,10 @@
   "usingDefaultKey": { "message": "Using default key" },
   "cloudSyncEnabled": { "message": "Cloud sync enabled — data will sync across devices" },
   "cloudSyncDisabled": { "message": "Cloud sync disabled" },
+  "backupExported": { "message": "Backup exported" },
+  "backupImported": { "message": "Backup imported" },
+  "backupImportConfirm": { "message": "Importing this backup will replace your current GG Buddy wishlist, settings, alerts, history, custom images, and API key. Continue?" },
+  "invalidBackupFile": { "message": "Invalid backup file" },
   "cacheCleared": { "message": "Cache cleared" },
   "priceHistoryCleared": { "message": "Price history cleared" },
 

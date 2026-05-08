@@ -30,9 +30,11 @@ Never overpay for a game again. GG Buddy automatically detects games on store pa
 
 🖼️ Custom Game Covers — Missing artwork? Set a custom game image from wishlist details and GG Buddy uses it across views.
 
+💾 Cross-Browser Backup & Restore — Export your wishlist, alert settings, preferences, API key, price history, recent searches, and custom game images as a JSON backup so you can move between Chrome and Firefox or keep both browsers aligned manually.
+
 🎨 Full Customization — • 4 beautifully responsive themes: Light, Dark, OLED Black, and System Auto • 7 distinct accent colors • Compact mode for dense lists • Export/Import your wishlist as a JSON backup
 
-☁️ Cross-Device Sync — Your wishlist and user settings sync flawlessly across all of your active Chrome installs.
+☁️ Browser Sync — Your wishlist and user settings can sync across installs of the same browser profile when supported.
 
 🌐 18 Languages + Supported Currencies — Full UI localization: Czech, Danish, German, English, Spanish, Finnish, French, Italian, Japanese, Korean, Norwegian, Polish, Portuguese (Brazil), Russian, Swedish, Ukrainian, Chinese Simplified.
 

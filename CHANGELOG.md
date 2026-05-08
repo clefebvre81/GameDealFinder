@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.8.0] - 2026-05-07
+
+### Added
+
+- **Cross-Browser Backup & Restore** — Settings now includes full JSON backup export/import for wishlist items, alert settings, preferences, region, API key, price history, recent searches, and custom game images so users can move between Chrome and Firefox.
+
+### Fixed
+
+- **Expired Bundle Recommendations** — Bundle Watchlist, wishlist bundle callouts, and Active Bundles now ignore bundles that have already ended.
+
+---
+
 ## [2.7.0] - 2026-04-28
 
 ### Added
