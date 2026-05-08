@@ -3,6 +3,7 @@
 A Chrome and Firefox extension that automatically compares PC game prices across 17+ stores using [GG.deals](https://gg.deals). Never overpay for a game again.
 
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-blue?logo=googlechrome&logoColor=white)
+[![Firefox Add-on](https://img.shields.io/badge/Firefox-Add--on-orange?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/firefox/addon/gg-buddy/)
 ![Version](https://img.shields.io/badge/version-2.7.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
