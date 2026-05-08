@@ -1,14 +1,10 @@
 # GG Buddy 🎮💰
 
-A Chrome extension that automatically compares PC game prices across 17+ stores using [GG.deals](https://gg.deals). Never overpay for a game again.
+A Chrome and Firefox extension that automatically compares PC game prices across 17+ stores using [GG.deals](https://gg.deals). Never overpay for a game again.
 
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-blue?logo=googlechrome&logoColor=white)
 ![Version](https://img.shields.io/badge/version-2.7.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-
-## Chrome Web Store listing
-
-Copy the full store description from [`chrome-store-description.txt`](chrome-store-description.txt) into the Chrome Web Store “Detailed description” field when publishing.
 
 ## Features
 
