@@ -77,6 +77,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.4.0]
+
+### Added
+
+- **Expanded Store Coverage** — Added price-detection content scripts for additional keyshops and bundle sites: Humble Bundle, Fanatical, Green Man Gaming, CDKeys, Kinguin, Eneba, G2A, AllKeyShop, Instant Gaming, IsThereAnyDeal, GamersGate, WinGameStore, DLGamer, and Digiphile.
+- **Currency Conversion Backend** — Added `api.frankfurter.app` as a host permission so prices can be normalized into your selected region's currency across the popup, overlays, and alerts.
+- **Repack-Site Detection (foundation for the "Buy Legit" nudge)** — Added content scripts on a small set of well-known repack sites (FitGirl Repacks, IGG-Games, GOG-Games) so the extension can detect the game on the page and surface legitimate price comparisons. Only the page title is read for game lookup; nothing personal is collected or transmitted.
+
+### Notes on permissions
+
+- Because this release adds new entries to `host_permissions` and content-script `matches` in the manifest, Chrome treats it as a permission expansion and disables the extension until the user re-approves. The "Read and change your data on a number of websites" prompt lists the new store, bundle, and repack domains added above. No new sensitive Chrome APIs (tabs, cookies, history, downloads, etc.) were added.
+
+---
+
 ## [2.3.0] - 2025-03-09
 
 ### Added
@@ -115,7 +129,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [2.6.2]: https://github.com/ggbuddy/GameDealFinder/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/ggbuddy/GameDealFinder/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/ggbuddy/GameDealFinder/compare/v2.5.0...v2.6.0
-[2.5.0]: https://github.com/ggbuddy/GameDealFinder/compare/v2.3.0...v2.5.0
+[2.5.0]: https://github.com/ggbuddy/GameDealFinder/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/ggbuddy/GameDealFinder/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/ggbuddy/GameDealFinder/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/ggbuddy/GameDealFinder/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/ggbuddy/GameDealFinder/releases/tag/v2.1.0
