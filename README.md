@@ -45,7 +45,10 @@ Copy the full store description from [`chrome-store-description.txt`](chrome-sto
 ## Installation
 
 ### From Chrome Web Store
-*(Coming soon)*
+https://chromewebstore.google.com/detail/gg-buddy/fcilncfeaahfckkfeobdacblbijhegjc
+
+### From Firefox Extension Store
+https://addons.mozilla.org/en-US/firefox/addon/gg-buddy/ (Submitted for review)
 
 ### Manual Install (Developer Mode)
 1. Download or clone this repository
