@@ -267,7 +267,7 @@ body {
   font-size: 0.72rem;
   font-weight: 700;
   font-family: 'Lato', sans-serif;
-  transition: all 0.2s;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;

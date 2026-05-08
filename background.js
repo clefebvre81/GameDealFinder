@@ -15,6 +15,7 @@ let priceCache = {};
 let detectedGamesPerTab = {};
 let activeBundlesCache = { data: null, timestamp: 0 };
 let fxRateCache = {};
+const extensionAction = chrome.action || chrome.browserAction;
 
 // ── Startup ──────────────────────────────────────────────────────────────────
 
@@ -258,8 +259,8 @@ async function handleDetectedGames(data, tabId) {
   };
 
   const count = appIds.length;
-  chrome.action.setBadgeText({ text: count > 0 ? String(count) : '', tabId });
-  chrome.action.setBadgeBackgroundColor({ color: '#048044', tabId });
+  extensionAction?.setBadgeText({ text: count > 0 ? String(count) : '', tabId });
+  extensionAction?.setBadgeBackgroundColor({ color: '#048044', tabId });
   
 
 }

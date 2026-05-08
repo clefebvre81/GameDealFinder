@@ -44,14 +44,6 @@ function initI18n() {
     if (msg) el.placeholder = msg;
   });
 }
-initI18n();
-initTabA11yLabels();
-updateTabLayoutMode();
-// Re-check once after fonts settle so width calculation is accurate.
-if (document.fonts?.ready) {
-  document.fonts.ready.then(() => updateTabLayoutMode()).catch(() => {});
-}
-
 function initTabA11yLabels() {
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     const labelEl = btn.querySelector('.tab-label');
@@ -62,17 +54,44 @@ function initTabA11yLabels() {
   });
 }
 
+// Initialize tab layout with multiple timing strategies for Firefox compatibility
+function initTabLayout() {
+  updateTabLayoutMode();
+  // Re-check after fonts load
+  if (document.fonts?.ready) {
+    document.fonts.ready.then(() => updateTabLayoutMode()).catch(() => {});
+  }
+  // Fallback delays for browsers where fonts.ready isn't reliable
+  setTimeout(updateTabLayoutMode, 50);
+  setTimeout(updateTabLayoutMode, 150);
+}
+
+initI18n();
+initTabA11yLabels();
+initTabLayout();
+
+// Attach tab switching as early as possible. If a later Firefox-specific API
+// fails during startup, the popup navigation should still remain usable.
+document.addEventListener('click', (e) => {
+  const btn = e.target?.closest?.('.tab-btn');
+  if (!btn) return;
+  e.preventDefault();
+  switchTab(btn.dataset.tab);
+});
+
 function updateTabLayoutMode() {
   const tabs = document.querySelector('.tabs');
   if (!tabs) return;
-  const wasCompact = tabs.classList.contains('compact-tabs');
+
   const HYSTERESIS_PX = 6;
 
-  // Measure in full-label mode, then only apply if needed.
-  if (wasCompact) tabs.classList.remove('compact-tabs');
+  // Always measure the full-label layout. Measuring while compact labels are
+  // hidden makes Firefox alternate between compact and full modes.
+  tabs.classList.remove('compact-tabs');
   const overflowPx = tabs.scrollWidth - tabs.clientWidth;
-  const hasOverflow = overflowPx > HYSTERESIS_PX;
-  if (hasOverflow) tabs.classList.add('compact-tabs');
+  if (overflowPx > HYSTERESIS_PX) {
+    tabs.classList.add('compact-tabs');
+  }
 }
 
 // ── Utility helpers ──────────────────────────────────────────────────────────
@@ -339,16 +358,19 @@ function finishInit(result) {
   maybeStartOnboarding(result);
 }
 
-// Listen for system theme changes
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+// Listen for system theme changes. Firefox ESR/older WebExtension contexts may
+// only support MediaQueryList.addListener().
+const systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+const handleSystemThemeChange = () => {
   if (userPrefs.theme === 'system') applyTheme('system');
-});
+};
+if (typeof systemThemeQuery.addEventListener === 'function') {
+  systemThemeQuery.addEventListener('change', handleSystemThemeChange);
+} else if (typeof systemThemeQuery.addListener === 'function') {
+  systemThemeQuery.addListener(handleSystemThemeChange);
+}
 
 // ── Tab switching ────────────────────────────────────────────────────────────
-
-document.querySelectorAll('.tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
