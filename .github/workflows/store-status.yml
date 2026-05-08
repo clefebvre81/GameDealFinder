@@ -1,0 +1,113 @@
+name: Update Store Status
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Check Store Status
+      id: check-stores
+      run: |
+        # Check Chrome Web Store
+        echo "chrome_status=checking" >> $GITHUB_OUTPUT
+        
+        # Check Firefox Add-ons
+        echo "firefox_status=checking" >> $GITHUB_OUTPUT
+        
+        # Get latest version from package.json
+        VERSION=$(node -p "require('./package.json').version")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        
+    - name: Create or Update Status Issue
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const version = '${{ steps.check-stores.outputs.version }}';
+          const chromeStatus = '${{ steps.check-stores.outputs.chrome_status }}';
+          const firefoxStatus = '${{ steps.check-stores.outputs.firefox_status }}';
+          
+          const title = `📊 Store Release Status - v${version}`;
+          const body = `
+          ## 📊 Store Release Status for GG Buddy v${version}
+          
+          ### 🌐 Chrome Web Store
+          - **Status**: ${chromeStatus === 'checking' ? '🔄 Checking...' : chromeStatus === 'live' ? '✅ Live' : '❌ Not Live'}
+          - **Extension ID**: fcilncfeaahfckkfeobdacblbijhegjc
+          - **Store URL**: https://chromewebstore.google.com/detail/gg-buddy/fcilncfeaahfckkfeobdacblbijhegjc
+          - **Last Updated**: ${new Date().toISOString().split('T')[0]}
+          
+          ### 🦊 Firefox Add-ons
+          - **Status**: ${firefoxStatus === 'checking' ? '🔄 Checking...' : firefoxStatus === 'live' ? '✅ Live' : '❌ Not Live'}
+          - **Extension ID**: ggbuddy@example.com
+          - **Store URL**: https://addons.mozilla.org/firefox/addon/gg-buddy/
+          - **Last Updated**: ${new Date().toISOString().split('T')[0]}
+          
+          ### 📋 Release Checklist
+          - [ ] Chrome extension uploaded and approved
+          - [ ] Firefox extension uploaded and approved
+          - [ ] GitHub release created
+          - [ ] Documentation updated
+          - [ ] Version numbers synchronized
+          
+          ### 🔗 Quick Links
+          - [Chrome Developer Dashboard](https://chrome.google.com/webstore/developer/dashboard)
+          - [Firefox Developer Hub](https://addons.mozilla.org/developers/)
+          - [GitHub Releases](../../releases)
+          - [Build Status](../../actions)
+          
+          ---
+          *This issue is automatically updated daily and on main branch pushes.*
+          `;
+          
+          // Find existing status issue
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            labels: ['store-status']
+          });
+          
+          const existingIssue = issues.data.find(issue => 
+            issue.title.includes('Store Release Status')
+          );
+          
+          if (existingIssue) {
+            // Update existing issue
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existingIssue.number,
+              body: body
+            });
+            console.log(`Updated existing issue #${existingIssue.number}`);
+          } else {
+            // Create new issue
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['store-status', 'automation']
+            });
+            console.log(`Created new issue #${issue.data.number}`);
+          }

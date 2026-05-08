@@ -44,8 +44,10 @@ A Chrome and Firefox extension that automatically compares PC game prices across
 ## Installation
 
 ### 🏪 Official Stores
-- **Chrome Web Store**: https://chromewebstore.google.com/detail/gg-buddy/fcilncfeaahfckkfeobdacblbijhegjc
-- **Firefox Add-ons**: https://addons.mozilla.org/en-US/firefox/addon/gg-buddy/ (Submitted for review)
+- **Chrome Web Store**: https://chromewebstore.google.com/detail/gg-buddy/fcilncfeaahfckkfeobdacblbijhegjc ![Status](https://img.shields.io/badge/Chrome-🔄%20Checking-yellow)
+- **Firefox Add-ons**: https://addons.mozilla.org/en-US/firefox/addon/gg-buddy/ ![Status](https://img.shields.io/badge/Firefox-🔄%20Checking-yellow)
+
+**📊 Store Status**: [View Release Status](RELEASE-STATUS.md) | [Track Issues](https://github.com/Sn3akySl0th/gg-buddy/issues?q=is%3Aissue+label%3Astore-status)
 
 ### 📥 Install from GitHub
 For direct installation from GitHub (bypassing stores):

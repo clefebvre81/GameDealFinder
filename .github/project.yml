@@ -1,0 +1,68 @@
+name: GG Buddy Release Management
+
+description: Track extension releases across Chrome and Firefox stores
+
+owner: Sn3akySl0th
+repo: gg-buddy
+
+columns:
+  - name: 🔄 In Development
+    id: in-development
+  - name: 🧪 Testing
+    id: testing
+  - name: 📦 Ready for Release
+    id: ready-for-release
+  - name: 🏪 Store Review
+    id: store-review
+  - name: ✅ Live
+    id: live
+  - name: ❌ Issues
+    id: issues
+
+projects:
+  - name: Version 2.8.0
+    description: Current release cycle
+    columns:
+      - id: in-development
+        issues:
+          - title: "GitHub installation system"
+            url: "https://github.com/Sn3akySl0th/gg-buddy/issues/new?assignees=&labels=enhancement&template=feature_request.md"
+            status: completed
+          - title: "Automated build scripts"
+            url: "https://github.com/Sn3akySl0th/gg-buddy/issues/new?assignees=&labels=enhancement&template=feature_request.md"
+            status: completed
+      - id: testing
+        issues:
+          - title: "Cross-platform compatibility testing"
+            url: "https://github.com/Sn3akySl0th/gg-buddy/issues/new?assignees=&labels=bug&template=bug-report.md"
+            status: completed
+      - id: ready-for-release
+        issues:
+          - title: "Chrome ZIP prepared for upload"
+            url: "https://github.com/Sn3akySl0th/gg-buddy/releases"
+            status: completed
+          - title: "Firefox ZIP prepared for upload"
+            url: "https://github.com/Sn3akySl0th/gg-buddy/releases"
+            status: completed
+      - id: store-review
+        issues:
+          - title: "Chrome Web Store submission"
+            url: "https://chrome.google.com/webstore/developer/dashboard"
+            status: pending
+          - title: "Firefox Add-ons submission"
+            url: "https://addons.mozilla.org/developers/"
+            status: pending
+      - id: live
+        issues:
+          - title: "GitHub release v2.8.0"
+            url: "https://github.com/Sn3akySl0th/gg-buddy/releases/tag/v2.8.0"
+            status: completed
+
+automation:
+  - name: Store Status Updates
+    description: Automatically update store status daily and on pushes
+    workflow: .github/workflows/store-status.yml
+    schedule: daily
+    triggers:
+      - push to main
+      - manual dispatch
