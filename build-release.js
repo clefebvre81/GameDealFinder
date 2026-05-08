@@ -4,6 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Make the script async
+(async function() {
+
 // Configuration
 const version = require('./package.json')?.version || '2.8.0';
 const distDir = path.join(__dirname, 'dist-release');
@@ -122,21 +125,49 @@ if (fs.existsSync(firefoxManifest)) {
   fs.unlinkSync(firefoxManifest);
 }
 
-// Create ZIP files
+// Create ZIP files using Node.js
 console.log('\n📦 Creating ZIP files...');
 
 try {
+  const archiver = require('archiver');
+  const fs = require('fs');
+  
   // Chrome ZIP
-  execSync(`cd "${chromeDir}" && zip -r "../../${path.basename(chromeZip)}" .`, { stdio: 'inherit' });
+  const chromeOutput = fs.createWriteStream(chromeZip);
+  const chromeArchive = archiver('zip', { zlib: { level: 9 } });
+  
+  chromeArchive.pipe(chromeOutput);
+  chromeArchive.directory(chromeDir, false);
+  
+  chromeArchive.finalize();
+  
+  await new Promise((resolve, reject) => {
+    chromeOutput.on('close', resolve);
+    chromeArchive.on('error', reject);
+  });
+  
   console.log(`✅ Chrome ZIP created: ${path.basename(chromeZip)}`);
   
   // Firefox ZIP
-  execSync(`cd "${firefoxDir}" && zip -r "../../${path.basename(firefoxZip)}" .`, { stdio: 'inherit' });
+  const firefoxOutput = fs.createWriteStream(firefoxZip);
+  const firefoxArchive = archiver('zip', { zlib: { level: 9 } });
+  
+  firefoxArchive.pipe(firefoxOutput);
+  firefoxArchive.directory(firefoxDir, false);
+  
+  firefoxArchive.finalize();
+  
+  await new Promise((resolve, reject) => {
+    firefoxOutput.on('close', resolve);
+    firefoxArchive.on('error', reject);
+  });
+  
   console.log(`✅ Firefox ZIP created: ${path.basename(firefoxZip)}`);
   
 } catch (error) {
-  console.error('❌ Error creating ZIP files. Make sure zip is installed.');
-  console.log('💡 Alternative: Manually compress the folders in dist-release/');
+  console.error('❌ Error creating ZIP files:', error.message);
+  console.log('💡 Make sure archiver is installed: npm install archiver --save-dev');
+  process.exit(1);
 }
 
 // Create latest symlinks for GitHub releases
@@ -166,3 +197,5 @@ console.log(`📁 Release files in: ${distDir}`);
 console.log(`📄 Chrome: ggbuddy-chrome-${version}.zip`);
 console.log(`📄 Firefox: ggbuddy-firefox-${version}.zip`);
 console.log('\n💡 Upload these files to GitHub Releases for distribution.');
+
+})(); // Close async function
