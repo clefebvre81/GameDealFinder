@@ -11,6 +11,9 @@ on:
         required: true
         default: '2.8.0'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -53,8 +56,26 @@ jobs:
           dist-release/ggbuddy-firefox-*.zip
           dist-release/ggbuddy-chrome.zip
           dist-release/ggbuddy-firefox.zip
-        generate_release_notes: true
+        generate_release_notes: false
         draft: false
         prerelease: false
+        name: GG Buddy v${{ github.ref_name }}
+        body: |
+          ## GG Buddy v${{ github.ref_name }}
+          
+          ### Installation
+          
+          **Chrome Extension:**
+          - Download `ggbuddy-chrome-${{ github.ref_name }}.zip`
+          - Extract and load in Chrome developer mode
+          
+          **Firefox Extension:**
+          - Download `ggbuddy-firefox-${{ github.ref_name }}.zip`
+          - Extract and load in Firefox about:debugging
+          
+          ### Changes
+          - Added GitHub installation support
+          - Automated build and release system
+          - Cross-platform compatibility improvements
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
