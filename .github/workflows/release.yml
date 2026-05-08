@@ -23,6 +23,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
         
     - name: Install dependencies
       run: npm install
@@ -33,15 +34,19 @@ jobs:
     - name: Build release packages
       run: npm run build-release
       
+    - name: List files for debugging
+      run: ls -la dist-release/ || echo "dist-release directory not found"
+      
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: extension-packages
         path: dist-release/*.zip
+        retention-days: 30
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           dist-release/ggbuddy-chrome-*.zip
