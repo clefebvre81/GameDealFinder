@@ -11,7 +11,7 @@ A Chrome and Firefox extension that automatically compares PC game prices across
 
 🔍 **Auto-Detection** — Works on Steam, Epic, GOG, Humble, Fanatical, GMG, CDKeys, Kinguin, Eneba, G2A, AllKeyShop, Instant Gaming, IsThereAnyDeal, and more
 
-🧩 **Steam App, Package & Bundle Support** — Steam `app/`, `sub/`, and `bundle/` URLs use the matching GG.deals API endpoints
+🧩 **Steam App, Package & Bundle Support** — Steam `app/`, `sub/`, and `bundle/` URLs use the matching GG.deals API endpoints with package/bundle deal cards
 
 💰 **Inline Price Overlay** — Floating bar on store pages shows the best price; with **Official Stores Only**, keyshops are hidden and only official retail is shown
 

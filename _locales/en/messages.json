@@ -367,6 +367,18 @@
   "storeHumble": { "message": "Humble Bundle" },
   "storeFanatical": { "message": "Fanatical" },
   "storeGmg": { "message": "GMG" },
+  "steamApp": { "message": "Steam App" },
+  "steamAppShort": { "message": "App" },
+  "steamPackage": { "message": "Steam Package" },
+  "steamPackageShort": { "message": "Package" },
+  "steamBundle": { "message": "Steam Bundle" },
+  "steamBundleShort": { "message": "Bundle" },
+  "viewOnSteam": { "message": "View on Steam →" },
+  "productDirectPricing": { "message": "Direct package/bundle pricing from GG.deals" },
+  "productIncludesCount": { "message": "Includes $count$ items", "placeholders": { "count": { "content": "$1" } } },
+  "packageSavesVsItems": { "message": "Saves $amount$ $currency$ vs included items", "placeholders": { "amount": { "content": "$1" }, "currency": { "content": "$2" } } },
+  "packageCostsMoreVsItems": { "message": "Costs $amount$ $currency$ more than included items", "placeholders": { "amount": { "content": "$1" }, "currency": { "content": "$2" } } },
+  "packageSameAsItems": { "message": "Same price as included items" },
 
   "contextMenuLookup": { "message": "Look up game price on GG.deals" },
   "notifPriceDrop": {

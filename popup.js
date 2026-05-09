@@ -121,6 +121,103 @@ function getSteamStoreUrl(id) {
   return `https://store.steampowered.com/${pathType}/${encodeURIComponent(product.id)}/`;
 }
 
+function getSteamProductMeta(id) {
+  const product = parseSteamProductId(id);
+  if (product.type === 'sub') {
+    return {
+      ...product,
+      label: tf('steamPackage', 'Steam Package'),
+      shortLabel: tf('steamPackageShort', 'Package'),
+      icon: '🧩',
+      className: 'product-package',
+      storeUrl: getSteamStoreUrl(id),
+    };
+  }
+  if (product.type === 'bundle') {
+    return {
+      ...product,
+      label: tf('steamBundle', 'Steam Bundle'),
+      shortLabel: tf('steamBundleShort', 'Bundle'),
+      icon: '📦',
+      className: 'product-bundle',
+      storeUrl: getSteamStoreUrl(id),
+    };
+  }
+  return {
+    ...product,
+    label: tf('steamApp', 'Steam App'),
+    shortLabel: tf('steamAppShort', 'App'),
+    icon: '🎮',
+    className: 'product-app',
+    storeUrl: getSteamStoreUrl(id),
+  };
+}
+
+function renderSteamProductBadge(id) {
+  const meta = getSteamProductMeta(id);
+  if (meta.type === 'app') return '';
+  return `<span class="product-type-badge ${meta.className}" title="${escapeAttr(meta.label)}">${meta.icon} ${escapeHtml(meta.shortLabel)}</span>`;
+}
+
+function getIncludedItems(game) {
+  const candidates = [
+    game?.includedGames,
+    game?.includedItems,
+    game?.items,
+    game?.apps,
+    game?.games,
+    game?.info?.includedGames,
+    game?.info?.includedItems,
+    game?.info?.items,
+    game?.info?.apps,
+    game?.info?.games,
+  ];
+  for (const value of candidates) {
+    if (Array.isArray(value) && value.length > 0) return value;
+  }
+  return [];
+}
+
+function getItemComparablePrice(item) {
+  const direct = item?.price ?? item?.currentPrice ?? item?.bestPrice ?? item?.finalPrice ?? item?.amount;
+  if (direct !== undefined && direct !== null) {
+    const parsed = parseFloat(direct);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const nested = item?.prices;
+  if (nested) return getBestPrice(nested);
+  return null;
+}
+
+function renderSteamProductInsight(id, game, productPrice, currency) {
+  const meta = getSteamProductMeta(id);
+  if (meta.type === 'app') return '';
+
+  const items = getIncludedItems(game);
+  const count = items.length || game?.gamesCount || game?.info?.gamesCount || game?.itemsCount || game?.info?.itemsCount || null;
+  let comparison = '';
+
+  if (items.length > 0 && productPrice !== null) {
+    const itemPrices = items.map(getItemComparablePrice).filter((price) => price !== null);
+    if (itemPrices.length === items.length && itemPrices.length > 0) {
+      const standaloneTotal = roundMoney(itemPrices.reduce((sum, price) => sum + price, 0));
+      const delta = roundMoney(standaloneTotal - productPrice);
+      if (delta > 0) {
+        comparison = ` ${escapeHtml(tf('packageSavesVsItems', 'Saves $1 $2 vs included items', String(delta), currency))}`;
+      } else if (delta < 0) {
+        comparison = ` ${escapeHtml(tf('packageCostsMoreVsItems', 'Costs $1 $2 more than included items', String(Math.abs(delta)), currency))}`;
+      } else {
+        comparison = ` ${escapeHtml(tf('packageSameAsItems', 'Same price as included items'))}`;
+      }
+    }
+  }
+
+  const countText = count
+    ? escapeHtml(tf('productIncludesCount', 'Includes $1 items', String(count)))
+    : escapeHtml(tf('productDirectPricing', 'Direct package/bundle pricing from GG.deals'));
+  return `<div class="product-insight ${meta.className}"><span>${meta.icon}</span><span><b>${escapeHtml(meta.label)}</b> · ${countText}${comparison}</span></div>`;
+}
+
 const FX_API_BASE = 'https://api.frankfurter.app';
 const FX_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 let fxRateCache = {};
@@ -1264,6 +1361,7 @@ function dealScoreBadge(score) {
 function renderGameCard(id, game) {
   const p = game.prices;
   const currency = p.currency || 'USD';
+  const productMeta = getSteamProductMeta(id);
   const currentRetail = p.currentRetail ? parseFloat(p.currentRetail) : null;
   const currentKey = p.currentKeyshops ? parseFloat(p.currentKeyshops) : null;
   const histRetail = p.historicalRetail ? parseFloat(p.historicalRetail) : null;
@@ -1307,6 +1405,7 @@ function renderGameCard(id, game) {
   const chartHtml = history.length > 1 ? generateChart(history, currency) : '';
   const inWishlist = wishlist.some((w) => w.id === id);
   const recommendation = getBuyRecommendation(p, null);
+  const productInsight = renderSteamProductInsight(id, game, getBestPrice(p), currency);
 
   const imageInfo = getResolvedImageForGame(id, game);
 
@@ -1316,6 +1415,7 @@ function renderGameCard(id, game) {
       <div class="game-card-content">
         <div class="game-title-row">
           <div class="game-title">${escapeHtml(game.title || 'Unknown')}</div>
+          ${renderSteamProductBadge(id)}
           ${renderRecommendationBadge(recommendation)}
           ${dealScoreBadge(score)}
         </div>
@@ -1332,7 +1432,9 @@ function renderGameCard(id, game) {
       </button>
       <button class="btn-sm btn-outline bundle-btn" data-id="${id}">📦 ${escapeHtml(t('bundlesBtn'))}</button>
       ${game.url ? `<a class="game-link" href="${game.url}" target="_blank" rel="noopener">${escapeHtml(t('viewOnGgDeals'))}</a>` : ''}
+      ${productMeta.type !== 'app' ? `<a class="game-link" href="${escapeAttr(productMeta.storeUrl)}" target="_blank" rel="noopener">${escapeHtml(tf('viewOnSteam', 'View on Steam →'))}</a>` : ''}
     </div>
+    ${productInsight}
     <div class="bundle-container" id="bundleContainer_${id}"></div>
   </div>`;
 }
@@ -1817,7 +1919,7 @@ function displayWishlist() {
       <div class="wishlist-header" data-wl-expand="${item.id}">
         <img class="wishlist-img" src="${escapeHtml(imageInfo.src)}" data-fallbacks="${escapeAttr(imageInfo.fallbacks)}" alt="${escapeHtml(item.title)}">
         <div class="wishlist-header-info">
-          <div class="wishlist-title">${escapeHtml(item.title)}</div>
+          <div class="wishlist-title">${escapeHtml(item.title)} ${renderSteamProductBadge(item.id)}</div>
           <div class="wishlist-meta"><span>${escapeHtml(t('addedOn', dateStr))}</span>${item.addedPrice != null ? `<span>${escapeHtml(t('atPrice', String(item.addedPrice)))}</span>` : ''}${recommendationBadge}</div>
         </div>
         <div class="wishlist-price-badge ${lastKnown ? '' : 'unknown'}" id="wlPrice_${item.id}">${lastKnown || escapeHtml(t('clickToCheck'))}</div>
@@ -1928,6 +2030,8 @@ function loadWishlistItemDetail(id) {
 
     const badge = document.getElementById(`wlPrice_${id}`);
     if (badge && best !== null) { badge.textContent = `${best} ${currency}`; badge.classList.remove('unknown'); }
+    const productMeta = getSteamProductMeta(id);
+    const productInsight = renderSteamProductInsight(id, game, best, currency);
 
     const wl = wishlist.find((w) => w.id === id);
     let thresholdNotice = '';
@@ -2014,8 +2118,10 @@ function loadWishlistItemDetail(id) {
         <button class="btn-sm btn-outline" id="wlResetImgBtn_${id}" ${imageOverrides[String(id)] ? '' : 'disabled'}>Reset image</button>
         <button class="btn-sm btn-outline" id="wlBundleBtn_${id}">📦 ${escapeHtml(t('bundlesBtn'))}</button>
         ${game.url ? `<a class="game-link" href="${game.url}" target="_blank" rel="noopener">${escapeHtml(t('viewOnGgDeals'))}</a>` : ''}
+        ${productMeta.type !== 'app' ? `<a class="game-link" href="${escapeAttr(productMeta.storeUrl)}" target="_blank" rel="noopener">${escapeHtml(tf('viewOnSteam', 'View on Steam →'))}</a>` : ''}
         <button class="btn-sm btn-danger" style="margin-left:auto" data-action="removeWishlist" data-id="${id}">✕ ${escapeHtml(t('removeBtn'))}</button>
       </div>
+      ${productInsight}
       <input type="file" id="wlImageInput_${id}" accept="image/*" class="hidden" />
       <div id="wlBundleContainer_${id}"></div>
     </div>`;

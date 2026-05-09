@@ -489,6 +489,58 @@ button:disabled {
   flex: 1;
 }
 
+.product-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  border: 1px solid var(--gg-border);
+  background: var(--gg-hover);
+  color: var(--gg-text-sec);
+}
+
+.product-type-badge.product-package {
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.12);
+  color: #8b5cf6;
+}
+
+.product-type-badge.product-bundle {
+  border-color: rgba(4, 128, 68, 0.35);
+  background: var(--gg-green-bg);
+  color: var(--gg-green);
+}
+
+.product-insight {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--gg-border);
+  background: var(--gg-hover);
+  color: var(--gg-text-sec);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.product-insight.product-package {
+  border-color: rgba(124, 58, 237, 0.25);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.product-insight.product-bundle {
+  border-color: var(--gg-hist-border);
+  background: var(--gg-hist-bg);
+}
+
 /* ── Deal Score badge ──────────────────────────────────── */
 .deal-score {
   width: 42px;

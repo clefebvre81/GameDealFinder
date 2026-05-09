@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Cross-Browser Backup & Restore** — Settings now includes full JSON backup export/import for wishlist items, alert settings, preferences, region, API key, price history, recent searches, and custom game images so users can move between Chrome and Firefox.
 - **Steam Package & Bundle API Lookups** — Steam `sub/<id>` and `bundle/<id>` pages now use the new GG.deals price and bundle endpoints for Steam package and bundle IDs.
+- **Steam Package/Bundle Deal Cards** — Package and bundle results now show type badges, direct Steam links, fallback artwork, and included-item context when the API provides enough data.
 
 ### Fixed
 
