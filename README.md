@@ -4,7 +4,7 @@ A Chrome and Firefox extension that automatically compares PC game prices across
 
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-blue?logo=googlechrome&logoColor=white)
 [![Firefox Add-on](https://img.shields.io/badge/Firefox-Add--on-orange?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/firefox/addon/gg-buddy/)
-![Version](https://img.shields.io/badge/version-2.8.0-green)
+![Version](https://img.shields.io/badge/version-2.8.1-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
