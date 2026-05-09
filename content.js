@@ -88,12 +88,14 @@
       return { type: 'steam_ids', ids: [singleMatch[1]], store: 'steam' };
     }
 
-    const bundleMatch = path.match(/\/(bundle|sub)\/(\d+)/);
+    const subMatch = path.match(/\/sub\/(\d+)/);
+    if (subMatch) {
+      return { type: 'steam_sub_ids', ids: [subMatch[1]], store: 'steam' };
+    }
+
+    const bundleMatch = path.match(/\/bundle\/(\d+)/);
     if (bundleMatch) {
-      const appIds = extractSteamAppIdsFromLinks();
-      if (appIds.length > 0) {
-        return { type: 'steam_ids', ids: appIds, store: 'steam' };
-      }
+      return { type: 'steam_bundle_ids', ids: [bundleMatch[1]], store: 'steam' };
     }
 
     const appIds = extractSteamAppIdsFromDOM();

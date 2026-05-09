@@ -107,6 +107,20 @@ function escapeAttr(t) {
   return t.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
+function parseSteamProductId(value) {
+  const raw = String(value || '').trim();
+  const typed = raw.match(/^(app|sub|bundle):(\d+)$/i);
+  if (typed) return { type: typed[1].toLowerCase(), id: typed[2], key: `${typed[1].toLowerCase()}:${typed[2]}` };
+  if (/^\d+$/.test(raw)) return { type: 'app', id: raw, key: raw };
+  return { type: 'app', id: raw, key: raw };
+}
+
+function getSteamStoreUrl(id) {
+  const product = parseSteamProductId(id);
+  const pathType = product.type === 'app' ? 'app' : product.type;
+  return `https://store.steampowered.com/${pathType}/${encodeURIComponent(product.id)}/`;
+}
+
 const FX_API_BASE = 'https://api.frankfurter.app';
 const FX_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 let fxRateCache = {};
@@ -1324,30 +1338,37 @@ function renderGameCard(id, game) {
 }
 
 function getResolvedImageForGame(id, game = null) {
-  const appId = String(id);
+  const product = parseSteamProductId(id);
+  const appId = product.key;
   const custom = imageOverrides[appId];
   if (custom) {
     return { src: custom, fallbacks: '' };
   }
+  const steamAppImages = product.type === 'app' ? [
+    `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${product.id}/header.jpg`,
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${product.id}/header.jpg`,
+    `https://cdn.akamai.steamstatic.com/steam/apps/${product.id}/header.jpg`,
+  ] : [];
   const imgCandidates = [
     // Prefer Steam app artwork to match what users see on store pages.
-    `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`,
-    `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/header.jpg`,
+    ...steamAppImages,
     game?.info?.image,
     game?.image,
     game?.thumbnail,
     game?.cover,
+    'images/icon-128.png',
   ].filter(Boolean);
   const imgSrc = imgCandidates[0];
   const fallbackSources = [
     ...imgCandidates.slice(1),
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/capsule_616x353.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900_2x.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/capsule_231x87.jpg`,
-    `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/header.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`,
-  ].join('|');
+    ...(product.type === 'app' ? [
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${product.id}/capsule_616x353.jpg`,
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${product.id}/library_600x900_2x.jpg`,
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${product.id}/capsule_231x87.jpg`,
+      `https://cdn.akamai.steamstatic.com/steam/apps/${product.id}/header.jpg`,
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${product.id}/header.jpg`,
+    ] : []),
+  ].filter(Boolean).join('|');
   return { src: imgSrc, fallbacks: fallbackSources };
 }
 
@@ -2121,7 +2142,7 @@ window.removeWishlistItem = function (id) {
 // ── Wishlist Export / Import ──
 
 document.getElementById('exportWishlistBtn')?.addEventListener('click', () => {
-    const text = wishlist.map(w => `[${w.lastPrice} ${w.lastCurrency||'USD'}] ${w.title} - https://store.steampowered.com/app/${w.id}`).join('\n');
+    const text = wishlist.map(w => `[${w.lastPrice} ${w.lastCurrency||'USD'}] ${w.title} - ${getSteamStoreUrl(w.id)}`).join('\n');
     navigator.clipboard.writeText(text).then(() => showToast(t('exportedCopied') || 'Copied to clipboard!', 'success'));
 });
 

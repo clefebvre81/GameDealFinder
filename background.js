@@ -1,7 +1,15 @@
 const DEFAULT_API_KEY = 'sqz5OjdsyxNW2e0i3aF5BA0p5rpd0fHU';
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const PRICES_ENDPOINT = 'https://api.gg.deals/v1/prices/by-steam-app-id/';
-const BUNDLES_ENDPOINT = 'https://api.gg.deals/v1/bundles/by-steam-app-id/';
+const PRICES_ENDPOINTS = {
+  app: 'https://api.gg.deals/v1/prices/by-steam-app-id/',
+  sub: 'https://api.gg.deals/v1/prices/by-steam-sub-id/',
+  bundle: 'https://api.gg.deals/v1/prices/by-steam-bundle-id/',
+};
+const BUNDLES_ENDPOINTS = {
+  app: 'https://api.gg.deals/v1/bundles/by-steam-app-id/',
+  sub: 'https://api.gg.deals/v1/bundles/by-steam-sub-id/',
+  bundle: 'https://api.gg.deals/v1/bundles/by-steam-bundle-id/',
+};
 const ACTIVE_BUNDLES_ENDPOINT = 'https://api.gg.deals/v1/bundles/active/';
 const STEAM_SEARCH_URL = 'https://store.steampowered.com/api/storesearch/';
 const FX_API_BASE = 'https://api.frankfurter.app';
@@ -32,6 +40,44 @@ function isBundleActive(bundle, now = Date.now()) {
   // Bundle is considered inactive when end time is reached (<=) to exclude bundles ending exactly now
   if (endsAt !== null && endsAt <= now) return false;
   return true;
+}
+
+function encodeSteamProductId(type, id) {
+  const cleanType = ['app', 'sub', 'bundle'].includes(type) ? type : 'app';
+  const cleanId = String(id || '').trim();
+  if (!/^\d+$/.test(cleanId)) return null;
+  return cleanType === 'app' ? cleanId : `${cleanType}:${cleanId}`;
+}
+
+function parseSteamProductId(value, fallbackType = 'app') {
+  if (value && typeof value === 'object') {
+    const type = value.type || value.idType || fallbackType;
+    return parseSteamProductId(`${type}:${value.id}`, fallbackType);
+  }
+  const raw = String(value || '').trim();
+  const typed = raw.match(/^(app|sub|bundle):(\d+)$/i);
+  if (typed) {
+    const type = typed[1].toLowerCase();
+    const id = typed[2];
+    return { type, id, key: encodeSteamProductId(type, id) };
+  }
+  if (/^\d+$/.test(raw)) {
+    const type = ['app', 'sub', 'bundle'].includes(fallbackType) ? fallbackType : 'app';
+    return { type, id: raw, key: encodeSteamProductId(type, raw) };
+  }
+  return null;
+}
+
+function normalizeSteamProductIds(ids, fallbackType = 'app') {
+  const seen = new Set();
+  const out = [];
+  for (const value of ids || []) {
+    const parsed = parseSteamProductId(value, fallbackType);
+    if (!parsed || seen.has(parsed.key)) continue;
+    seen.add(parsed.key);
+    out.push(parsed);
+  }
+  return out;
 }
 
 // ── Startup ──────────────────────────────────────────────────────────────────
@@ -253,29 +299,33 @@ chrome.contextMenus.onClicked.addListener((info) => {
 async function handleDetectedGames(data, tabId) {
   if (!tabId || !data) return;
 
-  let appIds = [];
+  let productIds = [];
   if (data.type === 'steam_ids' && Array.isArray(data.ids)) {
-    appIds = data.ids.filter((id) => /^\d+$/.test(id));
+    productIds = normalizeSteamProductIds(data.ids, 'app').map((item) => item.key);
+  } else if (data.type === 'steam_sub_ids' && Array.isArray(data.ids)) {
+    productIds = normalizeSteamProductIds(data.ids, 'sub').map((item) => item.key);
+  } else if (data.type === 'steam_bundle_ids' && Array.isArray(data.ids)) {
+    productIds = normalizeSteamProductIds(data.ids, 'bundle').map((item) => item.key);
   } else if (data.type === 'titles' && Array.isArray(data.titles)) {
     try {
       const mapping = await resolveTitlesToSteamIds(data.titles);
-      appIds = Object.values(mapping).filter(Boolean);
+      productIds = normalizeSteamProductIds(Object.values(mapping).filter(Boolean), 'app').map((item) => item.key);
     } catch (e) {
       console.warn('Title resolution failed:', e);
       return;
     }
   }
 
-  if (appIds.length === 0) return;
+  if (productIds.length === 0) return;
 
   detectedGamesPerTab[tabId] = {
-    appIds,
+    appIds: productIds,
     store: data.store || 'unknown',
     pageType: data.pageType || null,
     timestamp: Date.now(),
   };
 
-  const count = appIds.length;
+  const count = productIds.length;
   extensionAction?.setBadgeText({ text: count > 0 ? String(count) : '', tabId });
   extensionAction?.setBadgeBackgroundColor({ color: '#048044', tabId });
   
@@ -299,12 +349,12 @@ async function handleLookupByIds(ids, region, sendResponse) {
       sendResponse({ success: false, error: 'No IDs provided' });
       return;
     }
-    const cleanIds = ids.map(String).filter((id) => /^\d+$/.test(id));
-    if (cleanIds.length === 0) {
+    const productIds = normalizeSteamProductIds(ids, 'app');
+    if (productIds.length === 0) {
       sendResponse({ success: false, error: 'No valid IDs provided' });
       return;
     }
-    const results = await fetchPricesBatch(cleanIds, region);
+    const results = await fetchPricesBatch(productIds, region);
     const rateLimit = await getRateLimitInfo();
     sendResponse({ success: true, data: results, rateLimit });
   } catch (e) {
@@ -370,10 +420,26 @@ async function handleGetBundles(ids, region, sendResponse) {
       return;
     }
     const apiKey = await getApiKey();
-    const url = `${BUNDLES_ENDPOINT}?ids=${ids.join(',')}&key=${apiKey}&region=${region || 'us'}`;
-    const json = await fetchWithRetry(url);
+    const productIds = normalizeSteamProductIds(ids, 'app');
+    if (productIds.length === 0) {
+      sendResponse({ success: false, error: 'No valid IDs provided' });
+      return;
+    }
+    const data = {};
+    for (const type of ['app', 'sub', 'bundle']) {
+      const group = productIds.filter((item) => item.type === type);
+      if (group.length === 0) continue;
+      const endpoint = BUNDLES_ENDPOINTS[type];
+      const url = `${endpoint}?ids=${group.map((item) => item.id).join(',')}&key=${apiKey}&region=${region || 'us'}`;
+      const json = await fetchWithRetry(url);
+      if (json.success && json.data) {
+        for (const item of group) {
+          if (json.data[item.id]) data[item.key] = json.data[item.id];
+        }
+      }
+    }
     const rateLimit = await getRateLimitInfo();
-    sendResponse({ ...json, rateLimit });
+    sendResponse({ success: true, data, rateLimit });
   } catch (e) {
     sendResponse({ success: false, error: e.message });
   }
@@ -416,32 +482,39 @@ async function fetchPricesBatch(ids, region) {
   const cacheKeyPrefix = `${region}:`;
   const results = {};
   const uncachedIds = [];
+  const productIds = normalizeSteamProductIds(ids, 'app');
 
-  for (const id of ids) {
-    const cached = priceCache[cacheKeyPrefix + id];
+  for (const item of productIds) {
+    const cached = priceCache[cacheKeyPrefix + item.key];
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      results[id] = cached.data;
+      results[item.key] = cached.data;
     } else {
-      uncachedIds.push(id);
+      uncachedIds.push(item);
     }
   }
 
   if (uncachedIds.length > 0) {
-    for (let i = 0; i < uncachedIds.length; i += 100) {
-      const batch = uncachedIds.slice(i, i + 100);
-      const url = `${PRICES_ENDPOINT}?ids=${batch.join(',')}&key=${apiKey}&region=${region}`;
+    for (const type of ['app', 'sub', 'bundle']) {
+      const idsForType = uncachedIds.filter((item) => item.type === type);
+      const endpoint = PRICES_ENDPOINTS[type];
+      for (let i = 0; i < idsForType.length; i += 100) {
+        const batch = idsForType.slice(i, i + 100);
+        const url = `${endpoint}?ids=${batch.map((item) => item.id).join(',')}&key=${apiKey}&region=${region}`;
 
-      const json = await fetchWithRetry(url);
+        const json = await fetchWithRetry(url);
 
-      if (!validatePriceResponse(json)) {
-        console.warn('Invalid price response shape:', json);
-        continue;
-      }
+        if (!validatePriceResponse(json)) {
+          console.warn('Invalid price response shape:', json);
+          continue;
+        }
 
-      if (json.success && json.data) {
-        for (const [id, gameData] of Object.entries(json.data)) {
-          results[id] = gameData;
-          priceCache[cacheKeyPrefix + id] = { data: gameData, timestamp: Date.now() };
+        if (json.success && json.data) {
+          for (const item of batch) {
+            const gameData = json.data[item.id];
+            if (!gameData) continue;
+            results[item.key] = gameData;
+            priceCache[cacheKeyPrefix + item.key] = { data: gameData, timestamp: Date.now() };
+          }
         }
       }
     }
