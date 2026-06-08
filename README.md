@@ -85,6 +85,19 @@ For direct installation from GitHub (bypassing stores):
 - No tracking or analytics
 - [Privacy Policy](privacy-policy.html)
 
+### How game-title matching works
+
+GG Buddy looks up prices in real time, only for games you actively view or search — it never pre-scans your browsing. Here's the exact data flow:
+
+1. **Pages with a Steam ID** (Steam store pages, known wishlist IDs) are looked up using the numeric ID directly — **no title text leaves your browser**.
+2. **When only a title is known** (some non-Steam stores, proxy sites, or manual search), the **title text** is sent to Steam's public Store Search API (`store.steampowered.com/api/storesearch/`, fixed to `l=english&cc=us`) to resolve it into a numeric Steam App ID. The request contains only the title — nothing about you.
+3. **Only the resulting numeric Steam IDs** — never the raw title — are sent to the **GG.deals Prices API**, along with a shared API key and your selected region code (e.g. `us`, `uk`).
+4. **Results are cached locally** (prices ~30 min; title→ID lookups in memory) to cut down on repeat requests.
+
+**Are users identified?** No. GG Buddy sends no account info, login, cookies, or per-user identifier. The GG.deals API key is **shared by all users**, so it identifies the extension rather than you. As with visiting any website, Steam and GG.deals receive standard request metadata (IP address, user-agent); GG Buddy adds nothing beyond that and runs no servers of its own. There is no telemetry, fingerprinting, or behavioral tracking.
+
+See the full [Privacy Policy](privacy-policy.html) for details.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.

@@ -44,4 +44,12 @@ Never overpay for a game again. GG Buddy automatically detects games on store pa
 • No tracking, no analytics
 • Open source
 
+🔎 HOW PRICE MATCHING WORKS (TRANSPARENCY)
+Lookups happen in real time, only for games you actively view or search — GG Buddy never pre-scans your browsing.
+• Pages that already have a Steam ID are looked up by that numeric ID — no title text leaves your browser.
+• When only a title is known (some non-Steam/proxy sites or manual search), the title text is sent to Steam's public Store Search API to resolve it into a numeric Steam App ID. That request contains only the title — nothing about you.
+• Only the resulting numeric Steam IDs (plus a shared API key and your region code, e.g. us/uk) are sent to GG.deals — never the raw title.
+• Results are cached locally to reduce repeat requests.
+You are NOT identified: no account info, login, cookies, or per-user ID is sent. The GG.deals API key is shared by all users, so it identifies the extension, not you. As with any website, Steam and GG.deals receive standard request metadata (IP, user-agent); GG Buddy adds nothing beyond that and runs no servers of its own. Full details in the Privacy Policy.
+
 Powered by the robust GG.deals API.

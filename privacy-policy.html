@@ -33,7 +33,7 @@
 
 <body>
     <h1>GG Buddy — Privacy Policy</h1>
-    <p class="date">Last updated: February 28, 2026</p>
+    <p class="date">Last updated: June 7, 2026</p>
 
     <h2>Overview</h2>
     <p>GG Buddy is a Chrome extension that helps you compare game prices across stores using the GG.deals API.
@@ -57,12 +57,50 @@
     <p>If enabled, your wishlist and preferences may be synced across devices using Chrome's built-in sync storage. This
         is managed by Google's Chrome Sync infrastructure and subject to Google's privacy policy.</p>
 
-    <h2>External API Requests</h2>
-    <p>The extension makes requests to the <a href="https://gg.deals">GG.deals</a> API to fetch game prices, search
-        results, and bundle information. These requests include:</p>
+    <h2>How Game-Title Matching Works</h2>
+    <p>To show you prices, GG Buddy has to turn the game you're looking at into a price lookup. Here's exactly what
+        happens, step by step:</p>
     <ul>
-        <li>Game Steam IDs or search queries</li>
-        <li>Your selected region/currency preference</li>
+        <li><strong>When a page already has a Steam ID</strong> (for example a Steam store page, or a wishlist with
+            known app IDs), GG Buddy uses that numeric ID directly. <strong>No game title text leaves your
+                browser.</strong></li>
+        <li><strong>When only a title is known</strong> (some non-Steam stores, proxy sites, or when you type a manual
+            search), the detected <strong>title text</strong> is sent to Steam's public Store Search API
+            (<code>store.steampowered.com/api/storesearch/</code>) to resolve it into a numeric Steam App ID. This
+            request is fixed to <code>l=english&amp;cc=us</code> and contains only the title text — nothing about you.</li>
+        <li><strong>Price lookup.</strong> Only the resulting <strong>numeric Steam IDs</strong> — never the raw title —
+            are then sent to the <a href="https://gg.deals">GG.deals</a> Prices API, along with a shared API key (see
+            below) and your selected region code (e.g. <code>us</code>, <code>uk</code>).</li>
+        <li><strong>Caching.</strong> Results are cached locally to reduce repeat requests: price data for about 30
+            minutes, and title-to-ID lookups in memory for the session. Repeated lookups for the same game may make no
+            network request at all.</li>
+    </ul>
+    <p>All of this happens in real time, only for games you actively view or search. GG Buddy does not pre-scan your
+        browsing or send a list of pages you visit.</p>
+
+    <h2>Are You Identified or Identifiable?</h2>
+    <p><strong>The extension does not identify you.</strong> It sends no account details, no login, no cookies of its
+        own, and no per-user identifier with any request.</p>
+    <ul>
+        <li><strong>Shared API key:</strong> Requests to GG.deals use a single API key that is the same for every GG
+            Buddy user. It identifies the extension, not you, and cannot be used to single you out.</li>
+        <li><strong>Standard network metadata:</strong> As with visiting any website, Steam and GG.deals receive the
+            normal request metadata your browser sends — such as your IP address and user-agent string. GG Buddy adds
+            nothing beyond this and has no servers of its own that receive your data.</li>
+        <li><strong>No tracking or analytics:</strong> There is no telemetry, no fingerprinting, and no behavioral
+            tracking anywhere in the extension.</li>
+    </ul>
+    <p>For how Steam and GG.deals handle requests on their side, see their respective privacy policies.</p>
+
+    <h2>External API Requests</h2>
+    <p>The extension makes requests to the following third-party services:</p>
+    <ul>
+        <li><strong>Steam Store Search API</strong> — to resolve game titles into Steam App IDs (title text only, as
+            described above).</li>
+        <li><strong>GG.deals API</strong> — to fetch game prices, deal scores, and bundle information (numeric Steam IDs
+            and your region preference only).</li>
+        <li><strong>Frankfurter currency API</strong> — to convert price thresholds between currencies (currency codes
+            and amounts only).</li>
     </ul>
     <p>No personal information, browsing history, or user identifiers are sent with these requests.</p>
 
@@ -76,8 +114,10 @@
     </ul>
 
     <h2>Third-Party Services</h2>
-    <p>This extension uses the GG.deals API. Please review <a href="https://gg.deals/privacy-policy/">GG.deals' Privacy
-            Policy</a> for their data practices.</p>
+    <p>This extension relies on the GG.deals API and the public Steam Store Search API, and optionally the Frankfurter
+        currency API. Please review <a href="https://gg.deals/privacy-policy/">GG.deals' Privacy Policy</a> and
+        <a href="https://store.steampowered.com/privacy_agreement/">Steam's Privacy Policy</a> for their data
+        practices.</p>
 
     <h2>Changes to This Policy</h2>
     <p>We may update this privacy policy from time to time. Changes will be reflected in the "Last updated" date above.
