@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "__MSG_extName__",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "default_locale": "en",
   "description": "__MSG_extDescription__",
   "permissions": [
@@ -11,6 +11,7 @@
     "alarms",
     "activeTab",
     "https://api.gg.deals/*",
+    "https://gg.deals/*",
     "https://store.steampowered.com/*",
     "https://api.frankfurter.app/*"
   ],

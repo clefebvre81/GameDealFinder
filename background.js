@@ -279,6 +279,130 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleSearchSteam(message.query, message.region, sendResponse);
     return true;
   }
+
+  if (message.action === 'overlaySiteStatus') {
+    const tabId = sender.tab?.id;
+    if (typeof tabId === 'number') {
+      setOverlayExcludedIcon(tabId, message.excluded === true).catch(() => {});
+    }
+    return false;
+  }
+
+  if (message.action === 'openOverlaySettings') {
+    openOverlaySettings().catch(() => {});
+    return false;
+  }
+
+  if (message.action === 'importGgDealsWishlist') {
+    startGgDealsImportJob(message.url).then(sendResponse).catch((e) => {
+      sendResponse({ success: false, error: e.message || 'Import failed' });
+    });
+    return true;
+  }
+
+  if (message.action === 'getGgDealsImportJob') {
+    chrome.storage.local.get(['ggDealsImportJob'], (result) => {
+      sendResponse({ success: true, job: result.ggDealsImportJob || null });
+    });
+    return true;
+  }
+
+  if (message.action === 'clearGgDealsImportJob') {
+    chrome.storage.local.remove(['ggDealsImportJob'], () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+});
+
+// ── Overlay site badge / gray icon ───────────────────────────────────────────
+
+const DEFAULT_ICONS = {
+  16: 'images/icon-16.png',
+  48: 'images/icon-48.png',
+  128: 'images/icon-128.png',
+};
+const grayIconCache = {};
+const excludedTabs = new Set();
+
+async function getGrayIconImageData(size) {
+  if (grayIconCache[size]) return grayIconCache[size];
+  try {
+    const url = chrome.runtime.getURL(DEFAULT_ICONS[size] || DEFAULT_ICONS[48]);
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, size, size);
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+      data[i] = data[i + 1] = data[i + 2] = gray;
+      data[i + 3] = Math.round(data[i + 3] * 0.75);
+    }
+    grayIconCache[size] = imageData;
+    return imageData;
+  } catch {
+    return null;
+  }
+}
+
+async function setOverlayExcludedIcon(tabId, excluded) {
+  if (excluded) excludedTabs.add(tabId);
+  else excludedTabs.delete(tabId);
+
+  try {
+    if (excluded) {
+      const icons = {};
+      for (const size of [16, 48]) {
+        const imageData = await getGrayIconImageData(size);
+        if (imageData) icons[size] = imageData;
+      }
+      if (Object.keys(icons).length > 0) {
+        await extensionAction?.setIcon({ tabId, imageData: icons });
+      } else {
+        await extensionAction?.setBadgeText({ tabId, text: '✕' });
+        await extensionAction?.setBadgeBackgroundColor({ tabId, color: '#6b7280' });
+      }
+      await extensionAction?.setTitle({
+        tabId,
+        title: 'GG Buddy — price bar hidden on this site',
+      });
+    } else {
+      await extensionAction?.setIcon({ tabId, path: DEFAULT_ICONS });
+      await extensionAction?.setTitle({ tabId, title: 'GG Buddy' });
+      // Keep numeric game-count badge if present; clear hide marker only
+      const badge = await extensionAction?.getBadgeText?.({ tabId });
+      if (badge === '✕') {
+        await extensionAction?.setBadgeText({ tabId, text: '' });
+      }
+    }
+  } catch {
+    // Tab may be closed or API unavailable (Firefox quirks)
+  }
+}
+
+async function openOverlaySettings() {
+  try {
+    await chrome.storage.local.set({ popupFocusSection: 'overlayBar' });
+  } catch { /* ignore */ }
+
+  try {
+    if (extensionAction?.openPopup) {
+      await extensionAction.openPopup();
+      return;
+    }
+  } catch { /* fall through */ }
+
+  const url = chrome.runtime.getURL('popup.html#settings');
+  chrome.tabs.create({ url });
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  excludedTabs.delete(tabId);
+  delete detectedGamesPerTab[tabId];
 });
 
 // ── Context menu ─────────────────────────────────────────────────────────────
@@ -328,8 +452,6 @@ async function handleDetectedGames(data, tabId) {
   const count = productIds.length;
   extensionAction?.setBadgeText({ text: count > 0 ? String(count) : '', tabId });
   extensionAction?.setBadgeBackgroundColor({ color: '#048044', tabId });
-  
-
 }
 
 function handleGetDetected(tabId, sendResponse) {
@@ -581,6 +703,698 @@ async function resolveTitlesToSteamIds(titles) {
   return mapping;
 }
 
+// ── GG.deals shared wishlist import ──────────────────────────────────────────
+
+function parseGgDealsShareUrl(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.startsWith('http') ? raw : `https://gg.deals${raw.startsWith('/') ? '' : '/'}${raw}`);
+    if (!/(^|\.)gg\.deals$/i.test(url.hostname)) return null;
+    const match = url.pathname.match(/\/wishlist\/share\/([A-Za-z0-9_-]+)\/?/i);
+    if (!match) return null;
+    return {
+      hash: match[1],
+      pageUrl: `https://gg.deals/wishlist/share/${match[1]}/`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
+function parseSharedWishlistGames(html, hash) {
+  const games = [];
+  const seen = new Set();
+  const region =
+    (String(html || '').match(/data-info-url="\/([a-z]{2})\/wishlist\/gameInfoShared\//i) || [])[1] ||
+    (String(html || '').match(/href="\/([a-z]{2})\/(?:deals|games|wishlist)/i) || [])[1] ||
+    'us';
+  const chunks = String(html || '').split(/data-container-game-id="/i).slice(1);
+  for (const chunk of chunks) {
+    const id = (chunk.match(/^(\d+)/) || [])[1];
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    // Only read attrs from this element's opening tag (info-url often appears before game-id)
+    const tagEnd = chunk.indexOf('>');
+    const openTag = chunk.slice(0, tagEnd > 0 ? tagEnd : 800);
+    const title = decodeHtmlEntities((openTag.match(/data-game-title="([^"]*)"/i) || [])[1] || '').trim();
+    const slug = decodeHtmlEntities((openTag.match(/data-game-name="([^"]*)"/i) || [])[1] || '').trim();
+    const infoUrl = hash
+      ? `https://gg.deals/${region}/wishlist/gameInfoShared/${id}/?hash=${encodeURIComponent(hash)}&showKeyshops=1`
+      : null;
+    if (!title && !slug) continue;
+    games.push({ ggId: id, title: title || slug, slug, infoUrl });
+  }
+  return games;
+}
+
+function parseShareMaxPage(html) {
+  let max = 1;
+  const re = /[?&]page=(\d+)/gi;
+  let match;
+  while ((match = re.exec(String(html || ''))) !== null) {
+    const n = parseInt(match[1], 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max;
+}
+
+function parseShareOwner(html) {
+  const ownerMatch = String(html || '').match(/<title>([^<]*?)(?:'s)?\s*wishlist/i);
+  return ownerMatch ? decodeHtmlEntities(ownerMatch[1]).trim() : null;
+}
+
+function isCloudflareChallengeHtml(html) {
+  const text = String(html || '');
+  if (text.length < 12000) return true;
+  return /<title>\s*Just a moment/i.test(text) || /cf-browser-verification|challenge-platform/i.test(text);
+}
+
+function sharePageUrl(baseUrl, page) {
+  const url = new URL(baseUrl);
+  if (page <= 1) url.searchParams.delete('page');
+  else url.searchParams.set('page', String(page));
+  return url.toString();
+}
+
+function mergeSharedGames(target, incoming, seen) {
+  let added = 0;
+  for (const game of incoming || []) {
+    const id = String(game.ggId || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    target.push(game);
+    added++;
+  }
+  return added;
+}
+
+function normalizeScrapedShareGames(games, hash) {
+  return (games || []).map((g) => ({
+    ggId: String(g.ggId || ''),
+    title: g.title,
+    slug: g.slug || '',
+    infoUrl: g.infoUrl || (hash && g.ggId
+      ? `https://gg.deals/us/wishlist/gameInfoShared/${g.ggId}/?hash=${encodeURIComponent(hash)}&showKeyshops=1`
+      : null),
+  }));
+}
+
+async function setGgDealsImportProgress(partial) {
+  try {
+    const stored = await chrome.storage.local.get(['ggDealsImportJob']);
+    const prev = stored.ggDealsImportJob && typeof stored.ggDealsImportJob === 'object'
+      ? stored.ggDealsImportJob
+      : {};
+    const job = {
+      ...prev,
+      ...partial,
+      updatedAt: Date.now(),
+    };
+    await chrome.storage.local.set({ ggDealsImportJob: job });
+  } catch {
+    // ignore
+  }
+}
+
+function startImportKeepAlive() {
+  stopImportKeepAlive();
+  try {
+    chrome.alarms.create('ggDealsImportKeepAlive', { periodInMinutes: 1 });
+  } catch {
+    // alarms may be unavailable
+  }
+  importKeepAliveTimer = setInterval(() => {
+    try { chrome.runtime.getPlatformInfo(() => {}); } catch { /* ignore */ }
+  }, 20000);
+}
+
+function stopImportKeepAlive() {
+  if (importKeepAliveTimer) {
+    clearInterval(importKeepAliveTimer);
+    importKeepAliveTimer = null;
+  }
+  try { chrome.alarms.clear('ggDealsImportKeepAlive'); } catch { /* ignore */ }
+}
+
+let importJobRunning = false;
+let importKeepAliveTimer = null;
+
+async function applyImportedGamesToWishlist(games) {
+  const stored = await chrome.storage.local.get(['wishlist', 'userPrefs']);
+  const wishlist = Array.isArray(stored.wishlist) ? [...stored.wishlist] : [];
+  const ids = new Set(wishlist.map((w) => String(w.id)));
+  let added = 0;
+  let skipped = 0;
+  const now = new Date().toISOString();
+
+  for (const game of games || []) {
+    if (!game?.id || !game?.title) continue;
+    const id = String(game.id);
+    if (ids.has(id)) {
+      skipped++;
+      continue;
+    }
+    ids.add(id);
+    wishlist.push({
+      id,
+      title: String(game.title),
+      addedPrice: null,
+      addedDate: now,
+      alertEnabled: false,
+      alertThreshold: 0,
+      alertThresholdCustom: false,
+      source: 'ggdeals-share',
+      ggId: game.ggId || null,
+    });
+    added++;
+  }
+
+  await chrome.storage.local.set({ wishlist });
+  try {
+    const prefs = stored.userPrefs || {};
+    if (prefs.syncEnabled) {
+      const wlStr = JSON.stringify(wishlist);
+      if (wlStr.length < 7000) {
+        await chrome.storage.sync.set({ wishlist });
+      }
+    }
+  } catch {
+    // sync quota / unavailable
+  }
+
+  return { added, skipped, wishlist };
+}
+
+function notifyGgDealsImportDone(job) {
+  try {
+    const added = job.added || 0;
+    const missed = Array.isArray(job.unresolved) ? job.unresolved.length : 0;
+    chrome.notifications.create(`ggdeals-import-${job.id || Date.now()}`, {
+      type: 'basic',
+      iconUrl: 'images/icon-128.png',
+      title: 'GG Buddy',
+      message: missed > 0
+        ? `Imported ${added} games (${missed} unresolved). Reopen the popup to review them.`
+        : `Imported ${added} games from GG.deals wishlist.`,
+    });
+  } catch {
+    // notifications may be blocked
+  }
+}
+
+async function startGgDealsImportJob(url) {
+  const parsed = parseGgDealsShareUrl(url);
+  if (!parsed) {
+    return {
+      success: false,
+      error: 'Invalid GG.deals wishlist share link. Expected https://gg.deals/wishlist/share/<hash>/',
+    };
+  }
+
+  if (importJobRunning) {
+    return { success: false, error: 'An import is already running in the background.' };
+  }
+
+  const existing = (await chrome.storage.local.get(['ggDealsImportJob'])).ggDealsImportJob;
+  // Stale "running" jobs (popup closed / worker restarted) are overwriteable
+  if (existing?.status === 'running' && (Date.now() - (existing.updatedAt || 0)) < 15000) {
+    return { success: false, error: 'An import is already running in the background.', job: existing };
+  }
+
+  const job = {
+    id: `imp-${Date.now()}`,
+    status: 'running',
+    url: parsed.pageUrl,
+    shareUrl: parsed.pageUrl,
+    hash: parsed.hash,
+    owner: null,
+    phase: 'start',
+    message: 'Fetching shared wishlist…',
+    page: 0,
+    maxPage: 0,
+    listed: 0,
+    added: 0,
+    skipped: 0,
+    unresolved: [],
+    startedAt: Date.now(),
+    updatedAt: Date.now(),
+    finishedAt: null,
+    error: null,
+  };
+
+  await chrome.storage.local.set({ ggDealsImportJob: job });
+  importJobRunning = true;
+  startImportKeepAlive();
+
+  // Detached: do not await — popup can close safely
+  runGgDealsImportJob(job).catch(async (e) => {
+    await setGgDealsImportProgress({
+      status: 'error',
+      phase: 'error',
+      message: e.message || 'Import failed',
+      error: e.message || 'Import failed',
+      finishedAt: Date.now(),
+    });
+  }).finally(() => {
+    importJobRunning = false;
+    stopImportKeepAlive();
+  });
+
+  return { success: true, started: true, job };
+}
+
+async function runGgDealsImportJob(job) {
+  const parsed = { pageUrl: job.shareUrl || job.url, hash: job.hash };
+
+  let owner = null;
+  let listed = [];
+  let maxPage = 1;
+
+  try {
+    const fetched = await fetchAllSharedWishlistGames(parsed.pageUrl, parsed.hash);
+    owner = fetched.owner;
+    listed = fetched.games;
+    maxPage = fetched.maxPage || 1;
+  } catch {
+    listed = [];
+  }
+
+  if (listed.length === 0) {
+    const scraped = await scrapeAllSharePagesViaTab(parsed.pageUrl, parsed.hash);
+    if (scraped?.games?.length) {
+      listed = scraped.games;
+      owner = scraped.owner || owner;
+      maxPage = scraped.maxPage || maxPage;
+    }
+  }
+
+  if (listed.length === 0) {
+    await setGgDealsImportProgress({
+      status: 'error',
+      phase: 'error',
+      owner,
+      message: 'No games found on that shared wishlist. Make sure the link is public and still valid.',
+      error: 'No games found on that shared wishlist. Make sure the link is public and still valid.',
+      finishedAt: Date.now(),
+    });
+    return;
+  }
+
+  await setGgDealsImportProgress({
+    owner,
+    listed: listed.length,
+    maxPage,
+    phase: 'resolve',
+    message: `Found ${listed.length} games — resolving Steam IDs…`,
+  });
+
+  const resolved = await resolveSharedWishlistToSteam(listed, parsed.pageUrl);
+  const games = [];
+  const unresolved = [];
+  const seenSteam = new Set();
+
+  for (const item of resolved) {
+    if (!item.steamKey) {
+      unresolved.push({
+        title: item.title,
+        ggId: item.ggId || null,
+        slug: item.slug || null,
+      });
+      continue;
+    }
+    if (seenSteam.has(item.steamKey)) continue;
+    seenSteam.add(item.steamKey);
+    games.push({
+      id: item.steamKey,
+      title: item.title,
+      ggId: item.ggId,
+      slug: item.slug || null,
+      resolvedVia: item.resolvedVia,
+    });
+  }
+
+  await setGgDealsImportProgress({
+    phase: 'saving',
+    message: `Saving ${games.length} games to your wishlist…`,
+    listed: listed.length,
+    unresolved,
+  });
+
+  const { added, skipped } = await applyImportedGamesToWishlist(games);
+
+  const doneJob = {
+    status: 'done',
+    phase: 'done',
+    owner,
+    listed: listed.length,
+    pages: maxPage,
+    added,
+    skipped,
+    unresolved,
+    message: `Imported ${added} from ${owner || 'GG.deals'} (${skipped} duplicates, ${unresolved.length} unresolved)`,
+    finishedAt: Date.now(),
+    error: null,
+  };
+  await setGgDealsImportProgress(doneJob);
+  notifyGgDealsImportDone({ ...job, ...doneJob });
+}
+
+// Mark interrupted jobs after service worker restart (only if stale)
+chrome.storage.local.get(['ggDealsImportJob'], (result) => {
+  const job = result.ggDealsImportJob;
+  const age = Date.now() - (job?.updatedAt || job?.startedAt || 0);
+  if (job?.status === 'running' && !importJobRunning && age > 90000) {
+    chrome.storage.local.set({
+      ggDealsImportJob: {
+        ...job,
+        status: 'error',
+        phase: 'error',
+        message: 'Import was interrupted. Open the Wishlist tab and click Import to try again.',
+        error: 'Import was interrupted. Click Import to try again.',
+        finishedAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    });
+  }
+});
+
+function extractSteamProductFromHtml(html) {
+  const match = String(html || '').match(/store\.steampowered\.com\/(app|sub|bundle)\/(\d+)/i);
+  if (!match) return null;
+  const type = match[1].toLowerCase();
+  const id = match[2];
+  return {
+    type,
+    id,
+    key: type === 'app' ? id : `${type}:${id}`,
+  };
+}
+
+async function fetchText(url, options = {}) {
+  const resp = await fetch(url, {
+    credentials: 'omit',
+    ...options,
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      ...(options.headers || {}),
+    },
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+  return resp.text();
+}
+
+async function mapPool(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function run() {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  const runners = Array.from({ length: Math.min(concurrency, items.length || 1) }, () => run());
+  await Promise.all(runners);
+  return results;
+}
+
+async function resolveSharedGameViaInfo(game, referer) {
+  const candidates = [];
+  if (game.infoUrl) candidates.push(game.infoUrl);
+  if (game.slug) candidates.push(`https://gg.deals/game/${encodeURIComponent(game.slug)}/`);
+
+  for (const candidate of candidates) {
+    try {
+      const html = await fetchText(candidate, {
+        headers: {
+          Referer: referer || 'https://gg.deals/',
+          ...(candidate.includes('gameInfoShared') ? { 'X-Requested-With': 'XMLHttpRequest' } : {}),
+        },
+      });
+      if (isCloudflareChallengeHtml(html)) continue;
+      const product = extractSteamProductFromHtml(html);
+      if (product) {
+        return {
+          ...game,
+          steamKey: product.key,
+          steamType: product.type,
+          resolvedVia: candidate.includes('gameInfoShared') ? 'info' : 'page',
+        };
+      }
+    } catch {
+      // try next
+    }
+  }
+
+  return { ...game, steamKey: null, steamType: null, resolvedVia: null };
+}
+
+function waitForTabComplete(tabId, timeoutMs = 25000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    function onUpdated(id, info) {
+      if (id === tabId && info.status === 'complete') finish(true);
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        finish(false);
+        return;
+      }
+      if (tab?.status === 'complete') finish(true);
+    });
+  });
+}
+
+function scrapeShareTabOnce(tabId) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { action: 'scrapeGgDealsShare' }, (resp) => {
+      if (chrome.runtime.lastError || !resp?.success) {
+        resolve(null);
+        return;
+      }
+      resolve(resp);
+    });
+  });
+}
+
+async function scrapeShareTabWithRetry(tabId, attempts = 4) {
+  for (let i = 0; i < attempts; i++) {
+    await new Promise((r) => setTimeout(r, i === 0 ? 900 : 700));
+    const resp = await scrapeShareTabOnce(tabId);
+    if (resp?.games?.length) return resp;
+  }
+  return null;
+}
+
+async function scrapeAllSharePagesViaTab(pageUrl, hash, pagesToScrape = null) {
+  return new Promise((resolve) => {
+    const initialPage = Array.isArray(pagesToScrape) && pagesToScrape.length
+      ? Math.min(...pagesToScrape)
+      : 1;
+    chrome.tabs.create({ url: sharePageUrl(pageUrl, initialPage), active: false }, async (tab) => {
+      if (!tab?.id) {
+        resolve(null);
+        return;
+      }
+      const tabId = tab.id;
+      const listed = [];
+      const seen = new Set();
+      let owner = null;
+      let maxPage = 1;
+
+      try {
+        await waitForTabComplete(tabId);
+        const first = await scrapeShareTabWithRetry(tabId);
+        if (!first?.games?.length && !pagesToScrape) {
+          resolve(null);
+          return;
+        }
+        owner = first?.owner || null;
+        maxPage = Math.max(1, parseInt(first?.maxPage, 10) || 1);
+        if (first?.games?.length) {
+          mergeSharedGames(listed, normalizeScrapedShareGames(first.games, hash), seen);
+        }
+
+        let pages;
+        if (Array.isArray(pagesToScrape) && pagesToScrape.length) {
+          pages = [...new Set(pagesToScrape.map((p) => parseInt(p, 10)).filter((p) => p >= 1))]
+            .filter((p) => p !== initialPage)
+            .sort((a, b) => a - b);
+        } else {
+          pages = [];
+          for (let page = 2; page <= maxPage; page++) pages.push(page);
+        }
+
+        for (const page of pages) {
+          await setGgDealsImportProgress({
+            phase: 'pages',
+            message: `Loading wishlist page ${page}${maxPage > 1 ? ` of ${maxPage}` : ''}…`,
+            page,
+            maxPage,
+            listed: listed.length,
+          });
+          await new Promise((r) => {
+            chrome.tabs.update(tabId, { url: sharePageUrl(pageUrl, page) }, () => r());
+          });
+          await waitForTabComplete(tabId);
+          const scraped = await scrapeShareTabWithRetry(tabId);
+          if (scraped?.games?.length) {
+            mergeSharedGames(listed, normalizeScrapedShareGames(scraped.games, hash), seen);
+            maxPage = Math.max(maxPage, parseInt(scraped.maxPage, 10) || 1);
+          }
+        }
+
+        resolve(listed.length ? { owner, games: listed, maxPage } : null);
+      } catch {
+        resolve(listed.length ? { owner, games: listed, maxPage } : null);
+      } finally {
+        try { chrome.tabs.remove(tabId); } catch { /* ignore */ }
+      }
+    });
+  });
+}
+
+async function fetchAllSharedWishlistGames(pageUrl, hash) {
+  const listed = [];
+  const seen = new Set();
+  let owner = null;
+  let maxPage = 1;
+  let usedTabFallback = false;
+
+  const firstHtml = await fetchText(pageUrl, { headers: { Referer: pageUrl } });
+  if (isCloudflareChallengeHtml(firstHtml) || parseSharedWishlistGames(firstHtml, hash).length === 0) {
+    const scraped = await scrapeAllSharePagesViaTab(pageUrl, hash);
+    if (!scraped?.games?.length) {
+      return { owner: null, games: [], maxPage: 1, usedTabFallback: true };
+    }
+    return {
+      owner: scraped.owner,
+      games: scraped.games,
+      maxPage: scraped.maxPage || 1,
+      usedTabFallback: true,
+    };
+  }
+
+  owner = parseShareOwner(firstHtml);
+  maxPage = parseShareMaxPage(firstHtml);
+  mergeSharedGames(listed, parseSharedWishlistGames(firstHtml, hash), seen);
+
+  await setGgDealsImportProgress({
+    phase: 'pages',
+    message: maxPage > 1
+      ? `Loading wishlist page 1 of ${maxPage}…`
+      : `Found ${listed.length} games…`,
+    page: 1,
+    maxPage,
+    listed: listed.length,
+  });
+
+  if (maxPage > 1) {
+    const pageNums = [];
+    for (let p = 2; p <= maxPage; p++) pageNums.push(p);
+    const failedPages = [];
+
+    await mapPool(pageNums, 3, async (page) => {
+      try {
+        const html = await fetchText(sharePageUrl(pageUrl, page), {
+          headers: { Referer: pageUrl },
+        });
+        if (isCloudflareChallengeHtml(html)) {
+          failedPages.push(page);
+          return;
+        }
+        const games = parseSharedWishlistGames(html, hash);
+        if (!games.length) {
+          failedPages.push(page);
+          return;
+        }
+        mergeSharedGames(listed, games, seen);
+        await setGgDealsImportProgress({
+          phase: 'pages',
+          message: `Loading wishlist pages… ${listed.length} games so far`,
+          page,
+          maxPage,
+          listed: listed.length,
+        });
+      } catch {
+        failedPages.push(page);
+      }
+    });
+
+    // If Cloudflare blocked later pages, finish those via a real tab
+    if (failedPages.length > 0) {
+      usedTabFallback = true;
+      const scraped = await scrapeAllSharePagesViaTab(pageUrl, hash, failedPages);
+      if (scraped?.games?.length) {
+        owner = owner || scraped.owner;
+        mergeSharedGames(listed, scraped.games, seen);
+        maxPage = Math.max(maxPage, scraped.maxPage || 1);
+      }
+    }
+  }
+
+  return { owner, games: listed, maxPage, usedTabFallback };
+}
+
+async function resolveSharedWishlistToSteam(listed, referer) {
+  await setGgDealsImportProgress({
+    phase: 'resolve',
+    message: `Found ${listed.length} games — resolving Steam IDs…`,
+    listed: listed.length,
+  });
+
+  const titles = listed.map((g) => g.title);
+  const mapping = await resolveTitlesToSteamIds(titles);
+
+  const resolved = listed.map((game) => {
+    const steamId = mapping[game.title];
+    if (steamId) {
+      return {
+        ...game,
+        steamKey: String(steamId),
+        steamType: 'app',
+        resolvedVia: 'steam-search',
+      };
+    }
+    return { ...game, steamKey: null, steamType: null, resolvedVia: null };
+  });
+
+  const unresolved = resolved.filter((g) => !g.steamKey);
+  if (unresolved.length === 0) return resolved;
+
+  await setGgDealsImportProgress({
+    phase: 'resolve',
+    message: `Resolving ${unresolved.length} remaining games via GG.deals…`,
+    listed: listed.length,
+    unresolved: unresolved.length,
+  });
+
+  const viaInfo = await mapPool(unresolved, 4, (game) => resolveSharedGameViaInfo(game, referer));
+  const byGgId = new Map(viaInfo.map((g) => [g.ggId, g]));
+  return resolved.map((g) => (g.steamKey ? g : (byGgId.get(g.ggId) || g)));
+}
+
 // ── API key helper ───────────────────────────────────────────────────────────
 
 function getApiKey() {
@@ -598,6 +1412,10 @@ chrome.alarms.create('checkWishlistPrices', { periodInMinutes: 360 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'checkWishlistPrices') {
     checkWishlistPrices();
+  }
+  // Keepalive tick for long GG.deals imports (no-op body; alarm wakes the worker)
+  if (alarm.name === 'ggDealsImportKeepAlive' && importJobRunning) {
+    try { chrome.runtime.getPlatformInfo(() => {}); } catch { /* ignore */ }
   }
 });
 
@@ -683,7 +1501,4 @@ async function checkWishlistPrices() {
   }
 }
 
-// Clean up tab data when tabs are closed
-chrome.tabs.onRemoved.addListener((tabId) => {
-  delete detectedGamesPerTab[tabId];
-});
+// Clean up tab data when tabs are closed (also handled above with excludedTabs)

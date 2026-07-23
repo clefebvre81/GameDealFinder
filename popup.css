@@ -1772,6 +1772,40 @@ body.theme-oled .error {
   margin-top: 4px;
 }
 
+.excluded-hosts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.excluded-host-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--gg-hover);
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+
+.excluded-host-row button {
+  background: transparent;
+  border: 1px solid var(--gg-border);
+  color: var(--gg-text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+}
+
+.excluded-host-row button:hover {
+  color: var(--gg-text);
+  border-color: var(--gg-accent);
+}
+
 .api-key-link {
   color: var(--gg-accent);
   font-weight: 700;
@@ -1787,6 +1821,94 @@ body.theme-oled .error {
   margin-bottom: 8px;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ggdeals-import-panel {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-hover);
+}
+
+.ggdeals-import-panel.hidden {
+  display: none;
+}
+
+.ggdeals-import-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ggdeals-import-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--gg-border);
+  background: var(--gg-bg, #fff);
+  color: var(--gg-text);
+}
+
+.ggdeals-unresolved {
+  margin-top: 8px;
+}
+
+.ggdeals-unresolved.hidden {
+  display: none;
+}
+
+.ggdeals-unresolved-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.ggdeals-unresolved-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+  background: var(--gg-bg, #fff);
+}
+
+.ggdeals-unresolved-list.hidden {
+  display: none;
+}
+
+.ggdeals-unresolved-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--gg-border);
+  font-size: 0.72rem;
+}
+
+.ggdeals-unresolved-list li:last-child {
+  border-bottom: none;
+}
+
+.ggdeals-unresolved-list a {
+  color: var(--gg-accent, #0d6efd);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ggdeals-unresolved-list .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .support-card {

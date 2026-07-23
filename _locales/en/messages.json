@@ -301,6 +301,35 @@
     "placeholders": { "added": { "content": "$1" }, "skipped": { "content": "$2" } }
   },
   "invalidWishlistFile": { "message": "Invalid wishlist file" },
+  "exportWishlistClipboard": { "message": "Export Wishlist" },
+  "importGgDealsBtn": { "message": "Import GG.deals link" },
+  "importGgDealsHelp": { "message": "Paste a public GG.deals wishlist share link" },
+  "importGgDealsConfirm": { "message": "Import" },
+  "importGgDealsWorking": { "message": "Fetching shared wishlist (all pages)…" },
+  "importGgDealsResolving": {
+    "message": "Found $count$ games — resolving Steam IDs…",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "importGgDealsLargeHint": {
+    "message": "Import continues in the background — you can close this popup."
+  },
+  "importGgDealsUnresolved": { "message": "Unresolved" },
+  "importGgDealsCopyUnresolved": { "message": "Copy titles" },
+  "importGgDealsDismiss": { "message": "Dismiss" },
+  "importGgDealsCopied": { "message": "Unresolved titles copied" },
+  "importGgDealsRunning": { "message": "Import running in the background…" },
+  "importGgDealsViewOnGg": { "message": "GG.deals" },
+  "importGgDealsDone": {
+    "message": "Imported $added$ from $owner$ ($skipped$ duplicates, $missed$ unresolved)",
+    "placeholders": {
+      "added": { "content": "$1" },
+      "owner": { "content": "$2" },
+      "skipped": { "content": "$3" },
+      "missed": { "content": "$4" }
+    }
+  },
+  "importGgDealsEmptyUrl": { "message": "Paste a GG.deals wishlist share URL first" },
+  "importGgDealsFailed": { "message": "Could not import that wishlist" },
 
   "errorTimeout": { "message": "Request timed out. Please try again." },
   "errorRateLimit": { "message": "API Rate Limit Reached!" },
@@ -405,9 +434,33 @@
     "message": "Best: $price$",
     "placeholders": { "price": { "content": "$1" } }
   },
+  "overlayBestLabel": { "message": "Best" },
+  "overlayOfficial": { "message": "Official" },
+  "overlayKeyshop": { "message": "Keyshop" },
   "overlaySupportDevs": { "message": "Support developers — get a deal:" },
+  "overlayMalwareRisk": { "message": "Is downloading this really worth the malware risk?" },
+  "overlayBuyLegitShort": { "message": "Buy legit — skip the malware risk" },
+  "overlayYouSave": { "message": "You save" },
+  "overlayBuyFor": { "message": "Buy for" },
   "overlayHistoricalLow": { "message": "Historical Low" },
   "overlayViewOnGgDeals": { "message": "View on GG.deals →" },
+  "overlayHideOnSite": { "message": "Always hide on this site" },
+  "overlayChangeAppearance": { "message": "Change appearance" },
+  "overlayMinimize": { "message": "Minimize" },
+  "settingsPriceBar": { "message": "Price Bar" },
+  "prefOverlayTheme": { "message": "Bar theme" },
+  "prefOverlayLayout": { "message": "Bar layout" },
+  "overlayThemeFollow": { "message": "Match popup theme" },
+  "overlayLayoutRounded": { "message": "Rounded floating" },
+  "overlayLayoutEdge": { "message": "Edge to edge" },
+  "overlayBarHelp": { "message": "On store pages, use the ⋮ menu on the price bar to minimize it or always hide it on that site. The toolbar icon turns gray when a site is hidden." },
+  "overlayBarAccentHelp": { "message": "Bar colors follow your Accent Color above. On piracy/repack sites the bar becomes a “buy legit” nudge using that same accent." },
+  "prefExcludedSites": { "message": "Hidden sites" },
+  "excludedSitesEmpty": { "message": "No sites hidden" },
+  "excludedSiteRemove": { "message": "Restore" },
+  "excludedSiteRestored": { "message": "Site restored — reload the page to show the bar" },
+  "overlayThemeSaved": { "message": "Price bar theme updated" },
+  "overlayLayoutSaved": { "message": "Price bar layout updated" },
 
   "onboardingSkip": { "message": "Skip tour" },
   "onboardingBack": { "message": "Back" },
@@ -431,5 +484,5 @@
   "onboardingWishlistTitle": { "message": "Wishlist & alerts" },
   "onboardingWishlistBody": { "message": "Add games to your wishlist from store pages or search results. Set a target price and enable notifications in Settings to get Chrome alerts when the price drops. You can export your list to share or back it up as JSON." },
   "onboardingPrefsTitle": { "message": "Make it yours" },
-  "onboardingPrefsBody": { "message": "In Settings: choose theme and accent, turn the on-page price overlay on or off, and use Official Stores Only to hide grey-market keyshops in the popup, overlay, and wishlist alerts. You can replay this tour anytime from Maintenance → Show welcome tour." }
+  "onboardingPrefsBody": { "message": "In Settings: choose theme and accent, customize the on-page price bar (layout, theme, hidden sites), and use Official Stores Only to hide grey-market keyshops in the popup, overlay, and wishlist alerts. You can replay this tour anytime from Maintenance → Show welcome tour." }
 }

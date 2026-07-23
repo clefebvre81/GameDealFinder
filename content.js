@@ -998,8 +998,55 @@
     return detectUniversalGame;
   }
 
+  // ── Product-page gates (bar only on real product URLs) ─────────────────────
+
+  const PRODUCT_PAGE_GATES = [
+    { host: /steampowered\.com$/i, path: /\/(app|sub|bundle)\/\d+/i },
+    { host: /epicgames\.com$/i, path: /\/(p|bundles)\/[^/?#]+/i },
+    { host: /gog\.com$/i, path: /\/(?:[a-z]{2}\/)?(?:game|movie)\//i },
+    { host: /humblebundle\.com$/i, path: /\/(store|games?|bundle|monthly)\//i },
+    { host: /fanatical\.com$/i, path: /\/(?:[a-z]{2}\/)?(?:game|dlc|bundle|pick-and-mix)\//i },
+    { host: /greenmangaming\.com$/i, path: /\/games?\//i },
+    { host: /cdkeys\.com$/i, path: /\/[^/?#]+\/[^/?#]+/i, exclude: /^\/(?:search|cart|account|wishlist|categories?|pc-games|xbox|playstation)\/?$/i },
+    { host: /kinguin\.net$/i, path: /\/[^/?#]+-\d+\/?$/i },
+    { host: /eneba\.com$/i, path: /\/[^/?#]+-\w+\/?$/i },
+    { host: /g2a\.com$/i, path: /\/[^/?#]+-i-\d+/i },
+    { host: /allkeyshop\.com$/i, path: /\/buy\/[^/?#]+/i },
+    { host: /instant-gaming\.com$/i, path: /\/(?:[a-z]{2}\/)?(?:product|pc-game|game)\/|\/[^/?#]+-\d+\/?$/i },
+    { host: /isthereanydeal\.com$/i, path: /\/game\/[^/?#]+/i },
+    { host: /gamersgate\.com$/i, path: /\/product\/[^/?#]+/i },
+    { host: /wingamestore\.com$/i, path: /\/product\/\d+\//i },
+    { host: /dlgamer\.com$/i, path: /\/[^/?#]+-p-\d+/i },
+    { host: /digiphile\.co$/i, path: /\/(?:game|product|deals?)\//i },
+    { host: /gg\.deals$/i, path: /\/(?:game|pack|bundle)\//i },
+    { host: /fitgirl-repacks\.site$/i, path: /\/[^/?#]+\/?$/i, exclude: /^\/(?:category|tag|page|search|author)\//i },
+    { host: /igg-games\.com$/i, path: /\/[^/?#]+\/?$/i, exclude: /^\/(?:category|tag|page|search)\//i },
+    { host: /gog-games(?:\.to|\.com)?$/i, path: /\/(?:game\/)?[^/?#]+\/?$/i, exclude: /^\/(?:category|tag|page|search)\//i },
+  ];
+
+  function isProductPage(url = window.location.href) {
+    let parsed;
+    try { parsed = new URL(url); } catch { return false; }
+    const host = parsed.hostname.replace(/^www\./i, '');
+    const path = parsed.pathname || '/';
+    for (const gate of PRODUCT_PAGE_GATES) {
+      if (!gate.host.test(host) && !gate.host.test(parsed.hostname)) continue;
+      if (gate.exclude && gate.exclude.test(path)) return false;
+      if (gate.path.test(path)) return true;
+      return false;
+    }
+    // Unknown host (universal detector): require a game-like path segment
+    return /\/(?:game|games|product|p|app|bundle|store)\/[^/?#]+/i.test(path);
+  }
+
   function run() {
     try {
+      // Always sync toolbar icon with per-site hide, even on non-product pages
+      getMergedUserPrefs().then(({ prefs }) => {
+        const excluded = prefs.overlay !== false && isHostExcluded(prefs);
+        chrome.runtime.sendMessage({ action: 'overlaySiteStatus', excluded }).catch(() => {});
+      }).catch(() => {});
+
       const detector = getDetector();
       if (!detector) return;
 
@@ -1007,16 +1054,25 @@
       if (result && ((result.ids && result.ids.length > 0) || (result.titles && result.titles.length > 0))) {
         chrome.runtime.sendMessage({ action: 'gamesDetected', data: result });
 
-        // Inject price overlay for single-game pages
-        if (result.type === 'steam_ids' && result.ids.length === 1) {
-          injectPriceOverlay({ id: result.ids[0], store: result.store });
+        // Price bar only on product pages (not browse/search/wishlist lists)
+        if (!isProductPage()) return;
+
+        const steamTypes = {
+          steam_ids: 'app',
+          steam_sub_ids: 'sub',
+          steam_bundle_ids: 'bundle',
+        };
+        if (steamTypes[result.type] && result.ids.length === 1) {
+          const type = steamTypes[result.type];
+          const id = type === 'app' ? result.ids[0] : `${type}:${result.ids[0]}`;
+          injectPriceOverlay({ id, store: result.store });
         } else if (result.type === 'titles' && result.titles.length >= 1) {
-          // Repack/unofficial sites: always show overlay for first (page) title; others: only when 1–2 titles
           const isRepackSite = result.store && (
             result.store.includes('fitgirl-repacks') ||
             result.store.includes('igg-games.com') ||
             result.store.includes('gog-games')
           );
+          // Product gate already applied; allow first title (repacks or single/dual match)
           if (isRepackSite || result.titles.length <= 2) {
             injectPriceOverlay({ title: result.titles[0], store: result.store });
           }
@@ -1031,10 +1087,20 @@
 
   let lastUrl = window.location.href;
   let debounceTimer = null;
+  // Overlay state (declared early so navigation handlers can clear it)
+  let overlayEl = null;
+  let overlayDismissed = false;
+  let overlayMinimized = false;
+  let lastOverlayState = null;
+  try {
+    overlayMinimized = sessionStorage.getItem('ggbuddy-bar-minimized') === '1';
+  } catch { /* ignore */ }
 
   function onUrlChange() {
     if (debounceTimer) clearTimeout(debounceTimer);
     removeOverlay(); // Clean up overlay on navigation
+    lastOverlayState = null;
+    overlayDismissed = false;
     debounceTimer = setTimeout(run, 1000);
   }
 
@@ -1134,15 +1200,177 @@
       sendResponse({ image: null });
       return false;
     }
+
+    if (message.action === 'scrapeGgDealsShare') {
+      const path = window.location.pathname || '';
+      if (!/\/wishlist\/share\/[A-Za-z0-9_-]+/i.test(path)) {
+        sendResponse({ success: false, error: 'Not a GG.deals share page' });
+        return false;
+      }
+      const owner = (document.title || '').replace(/\s*wishlist.*$/i, '').replace(/'s$/i, '').trim() || null;
+      let maxPage = 1;
+      const pageFromUrl = (window.location.search.match(/[?&]page=(\d+)/i) || [])[1];
+      if (pageFromUrl) maxPage = Math.max(maxPage, parseInt(pageFromUrl, 10) || 1);
+      document.querySelectorAll('a[href*="page="]').forEach((a) => {
+        const href = a.getAttribute('href') || a.href || '';
+        const m = href.match(/[?&]page=(\d+)/i);
+        if (m) maxPage = Math.max(maxPage, parseInt(m[1], 10) || 1);
+      });
+      const games = [];
+      const seen = new Set();
+      document.querySelectorAll('[data-container-game-id]').forEach((el) => {
+        const ggId = el.getAttribute('data-container-game-id');
+        if (!ggId || seen.has(ggId)) return;
+        seen.add(ggId);
+        const title = (el.getAttribute('data-game-title') || '').trim();
+        const slug = (el.getAttribute('data-game-name') || '').trim();
+        let infoUrl = (el.getAttribute('data-info-url') || '').trim();
+        if (infoUrl.startsWith('/')) infoUrl = `https://gg.deals${infoUrl}`;
+        if (!title && !slug) return;
+        games.push({ ggId, title: title || slug, slug, infoUrl: infoUrl || null });
+      });
+      sendResponse({ success: games.length > 0, owner, games, maxPage });
+      return false;
+    }
   });
 
   // ── Inline Price Overlay ───────────────────────────────────────────────────
 
-  let overlayEl = null;
-  let overlayDismissed = false;
-
   function removeOverlay() {
     if (overlayEl) { overlayEl.remove(); overlayEl = null; }
+  }
+
+  function getBarRoot() {
+    if (!overlayEl) return null;
+    return overlayEl.shadowRoot?.querySelector('.ggbuddy-bar') || overlayEl;
+  }
+
+  function getAccentPalette(accent) {
+    const map = {
+      blue: { accent: '#007bff', soft: '#60a5fa', nudge: '#0b5ed7', ctaBg: '#ffe347', ctaFg: '#0a1628' },
+      green: { accent: '#048044', soft: '#4ade80', nudge: '#048044', ctaBg: '#ffe347', ctaFg: '#064e3b' },
+      purple: { accent: '#7c3aed', soft: '#c4b5fd', nudge: '#5b21b6', ctaBg: '#fde68a', ctaFg: '#3b0764' },
+      red: { accent: '#dc3545', soft: '#f87171', nudge: '#b91c1c', ctaBg: '#fde68a', ctaFg: '#7f1d1d' },
+      orange: { accent: '#e67e22', soft: '#fdba74', nudge: '#c2410c', ctaBg: '#fff7ed', ctaFg: '#7c2d12' },
+      pink: { accent: '#ec4899', soft: '#f9a8d4', nudge: '#be185d', ctaBg: '#fce7f3', ctaFg: '#831843' },
+      cyan: { accent: '#06b6d4', soft: '#67e8f9', nudge: '#0e7490', ctaBg: '#ecfeff', ctaFg: '#164e63' },
+    };
+    return map[accent] || map.blue;
+  }
+
+  function applyAccentToBar(bar, prefs) {
+    if (!bar) return;
+    const palette = getAccentPalette(prefs?.accent || 'blue');
+    bar.style.setProperty('--ggb-accent', palette.accent);
+    bar.style.setProperty('--ggb-accent-soft', palette.soft);
+    bar.style.setProperty('--ggb-nudge-bg', palette.nudge);
+    bar.style.setProperty('--ggb-cta-bg', palette.ctaBg);
+    bar.style.setProperty('--ggb-cta-fg', palette.ctaFg);
+  }
+
+  function applyOverlayAppearance(prefs) {
+    const bar = getBarRoot();
+    if (!bar) return;
+    const theme = resolveOverlayTheme(prefs);
+    const layout = prefs.overlayLayout === 'edge' ? 'edge' : 'rounded';
+    const isSupport = bar.classList.contains('support-nudge');
+    bar.className = [
+      'ggbuddy-bar',
+      'ggbuddy-no-anim',
+      `theme-${theme}`,
+      `layout-${layout}`,
+      isSupport ? 'support-nudge' : '',
+      overlayMinimized ? 'is-minimized' : '',
+    ].filter(Boolean).join(' ');
+    applyAccentToBar(bar, prefs);
+  }
+
+  async function handleOverlayPrefsChanged(newPrefs, oldPrefs = {}) {
+    const prefs = newPrefs || {};
+    const wasExcluded = isHostExcluded(oldPrefs);
+    const nowExcluded = isHostExcluded(prefs);
+
+    // Global overlay off or this site newly hidden → remove bar + update icon
+    if (prefs.overlay === false || nowExcluded) {
+      removeOverlay();
+      chrome.runtime.sendMessage({
+        action: 'overlaySiteStatus',
+        excluded: prefs.overlay !== false && nowExcluded,
+      }).catch(() => {});
+      return;
+    }
+
+    // Site restored from hide list while we still have game data → re-show
+    if (wasExcluded && !nowExcluded && lastOverlayState && !overlayDismissed && isProductPage()) {
+      chrome.runtime.sendMessage({ action: 'overlaySiteStatus', excluded: false }).catch(() => {});
+      renderOverlay(
+        lastOverlayState.appId,
+        lastOverlayState.game,
+        lastOverlayState.store,
+        prefs.officialOnly === true,
+        prefs
+      );
+      return;
+    }
+
+    if (!overlayEl) return;
+
+    const officialChanged = (oldPrefs.officialOnly === true) !== (prefs.officialOnly === true);
+    if (officialChanged && lastOverlayState) {
+      renderOverlay(
+        lastOverlayState.appId,
+        lastOverlayState.game,
+        lastOverlayState.store,
+        prefs.officialOnly === true,
+        prefs
+      );
+      return;
+    }
+
+    // Theme / layout / accent — live class + CSS variable swap
+    applyOverlayAppearance(prefs);
+  }
+
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' && area !== 'sync') return;
+      if (!changes.userPrefs) return;
+      const newPrefs = changes.userPrefs.newValue || {};
+      const oldPrefs = changes.userPrefs.oldValue || {};
+      // Prefer the freshest merge so sync/local races don't flicker wrong
+      getMergedUserPrefs().then(({ prefs }) => {
+        handleOverlayPrefsChanged({ ...prefs, ...newPrefs }, oldPrefs);
+      }).catch(() => {
+        handleOverlayPrefsChanged(newPrefs, oldPrefs);
+      });
+    });
+  } catch { /* storage API unavailable */ }
+
+  // Live-update when OS theme flips and bar uses system / follow→system
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!overlayEl) return;
+      getMergedUserPrefs().then(({ prefs }) => {
+        const mode = prefs.overlayTheme || 'follow';
+        const effective = mode === 'follow' ? (prefs.theme || 'dark') : mode;
+        if (effective === 'system') applyOverlayAppearance(prefs);
+      }).catch(() => {});
+    });
+  } catch { /* older browsers */ }
+
+  function normalizeHost(host) {
+    return String(host || '').toLowerCase().replace(/^www\./, '');
+  }
+
+  function getExcludedHosts(prefs) {
+    return Array.isArray(prefs?.excludedHosts)
+      ? prefs.excludedHosts.map(normalizeHost).filter(Boolean)
+      : [];
+  }
+
+  function isHostExcluded(prefs, host = window.location.hostname) {
+    const needle = normalizeHost(host);
+    return getExcludedHosts(prefs).some((h) => needle === h || needle.endsWith('.' + h));
   }
 
   /** Match popup: merge sync userPrefs over local. */
@@ -1158,25 +1386,55 @@
     return { prefs, lastRegion: local.lastRegion };
   }
 
+  async function saveExcludedHosts(hosts) {
+    const { prefs } = await getMergedUserPrefs();
+    prefs.excludedHosts = hosts;
+    await new Promise((resolve) => chrome.storage.local.set({ userPrefs: prefs }, resolve));
+    try {
+      if (prefs.syncEnabled !== false) {
+        await chrome.storage.sync.set({ userPrefs: prefs });
+      }
+    } catch { /* ignore */ }
+  }
+
+  function resolveOverlayTheme(prefs) {
+    let theme = prefs.overlayTheme || 'follow';
+    if (theme === 'follow') theme = prefs.theme || 'dark';
+    if (theme === 'light') return 'light';
+    if (theme === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    // dark / oled → dark bar
+    return 'dark';
+  }
+
+  function overlayMsg(key, fallback, ...subs) {
+    return chrome.i18n.getMessage(key, subs) || fallback;
+  }
+
   async function injectPriceOverlay(opts) {
     if (overlayDismissed) return;
 
     let officialOnly = false;
-    // Check if user has overlay enabled
+    let prefs = {};
     try {
-      const { prefs, lastRegion } = await getMergedUserPrefs();
+      const merged = await getMergedUserPrefs();
+      prefs = merged.prefs;
       officialOnly = prefs.officialOnly === true;
-      if (prefs.overlay === false) return;
-      if (!prefs.region && lastRegion) {
-        prefs.region = lastRegion;
+      if (prefs.overlay === false) {
+        chrome.runtime.sendMessage({ action: 'overlaySiteStatus', excluded: false }).catch(() => {});
+        return;
       }
-      if (!prefs.region) {
-        prefs.region = 'us';
+      if (isHostExcluded(prefs)) {
+        chrome.runtime.sendMessage({ action: 'overlaySiteStatus', excluded: true }).catch(() => {});
+        return;
       }
+      chrome.runtime.sendMessage({ action: 'overlaySiteStatus', excluded: false }).catch(() => {});
+      if (!prefs.region && merged.lastRegion) prefs.region = merged.lastRegion;
+      if (!prefs.region) prefs.region = 'us';
       opts.region = prefs.region;
     } catch { /* proceed */ }
 
-    // Resolve: if we have a title but no id, resolve it first
     let appId = opts.id;
 
     if (!appId && opts.title) {
@@ -1188,24 +1446,396 @@
           const firstEntry = Object.entries(searchResp.data).find(([, v]) => v && v.prices);
           if (firstEntry) {
             appId = firstEntry[0];
-            renderOverlay(firstEntry[0], firstEntry[1], opts.store, officialOnly);
+            renderOverlay(firstEntry[0], firstEntry[1], opts.store, officialOnly, prefs);
             return;
           }
         }
       } catch { /* fallback below */ }
-      return; // couldn't resolve title
+      return;
     }
 
     if (!appId) return;
 
-    // Fetch price by ID
     chrome.runtime.sendMessage({ action: 'lookupByIds', ids: [appId], region: opts.region || 'us' }, (resp) => {
       if (!resp || !resp.success || !resp.data[appId]) return;
-      renderOverlay(appId, resp.data[appId], opts.store, officialOnly);
+      renderOverlay(appId, resp.data[appId], opts.store, officialOnly, prefs);
     });
   }
 
-  function renderOverlay(appId, game, detectedStore, officialOnly = false) {
+  function getOverlayStyles() {
+    return `
+:host, .ggbuddy-bar {
+  all: initial;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif !important;
+}
+.ggbuddy-bar {
+  position: fixed !important;
+  bottom: 16px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 2147483647 !important;
+  width: min(960px, calc(100vw - 24px)) !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  color: var(--ggb-fg) !important;
+  animation: ggBuddySlideUp 0.28s ease-out;
+  pointer-events: none !important;
+  transition: bottom 0.2s ease, left 0.2s ease, right 0.2s ease, width 0.2s ease, transform 0.2s ease;
+}
+.ggbuddy-bar *, .ggbuddy-bar *::before, .ggbuddy-bar *::after {
+  box-sizing: border-box !important;
+  font-family: inherit !important;
+}
+.ggbuddy-bar-shell {
+  pointer-events: auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  padding: 10px 14px !important;
+  background: var(--ggb-bg) !important;
+  color: var(--ggb-fg) !important;
+  border: 1px solid var(--ggb-border) !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.28) !important;
+  backdrop-filter: blur(14px);
+}
+.ggbuddy-bar:not(.support-nudge) .ggbuddy-cta {
+  background: var(--ggb-accent, #007bff) !important;
+  color: #fff !important;
+}
+.ggbuddy-bar:not(.support-nudge) .ggbuddy-badge-save {
+  background: var(--ggb-accent, #007bff) !important;
+  color: #fff !important;
+}
+.ggbuddy-bar:not(.support-nudge) .ggbuddy-divider {
+  background: var(--ggb-border) !important;
+}
+.ggbuddy-bar.layout-rounded .ggbuddy-bar-shell { border-radius: 14px !important; }
+.ggbuddy-bar.layout-edge {
+  bottom: 0 !important; left: 0 !important; right: 0 !important;
+  transform: none !important; width: 100% !important;
+}
+.ggbuddy-bar.layout-edge .ggbuddy-bar-shell {
+  border-radius: 0 !important; border-left: none !important; border-right: none !important; border-bottom: none !important;
+  max-width: none !important; padding: 10px 20px !important;
+}
+.ggbuddy-bar.theme-dark {
+  --ggb-bg: rgba(15,14,17,0.96); --ggb-fg: #f4f4f5; --ggb-muted: rgba(255,255,255,0.55);
+  --ggb-border: rgba(255,255,255,0.08);
+  --ggb-best: var(--ggb-accent-soft, #4ade80);
+  --ggb-link: var(--ggb-accent-soft, #60a5fa);
+  --ggb-hl-bg: var(--ggb-accent, #048044); --ggb-menu-bg: #1c1b20; --ggb-hover: rgba(255,255,255,0.08);
+}
+.ggbuddy-bar.theme-light {
+  --ggb-bg: rgba(239,239,241,0.97); --ggb-fg: #18181b; --ggb-muted: rgba(0,0,0,0.5);
+  --ggb-border: rgba(0,0,0,0.1);
+  --ggb-best: var(--ggb-accent, #047857);
+  --ggb-link: var(--ggb-accent, #1d4ed8);
+  --ggb-hl-bg: var(--ggb-accent, #048044); --ggb-menu-bg: #fff; --ggb-hover: rgba(0,0,0,0.06);
+}
+.ggbuddy-bar.support-nudge {
+  --ggb-bg: var(--ggb-nudge-bg, #048044);
+  --ggb-fg: #fff;
+  --ggb-muted: rgba(255,255,255,0.9);
+  --ggb-border: rgba(255,255,255,0.18);
+  --ggb-best: var(--ggb-cta-bg, #ffe347);
+  --ggb-link: #fff;
+  --ggb-hl-bg: rgba(0,0,0,0.25);
+  --ggb-menu-bg: rgba(0,0,0,0.35);
+  --ggb-hover: rgba(255,255,255,0.12);
+}
+.ggbuddy-bar.support-nudge.layout-rounded {
+  width: min(1100px, calc(100vw - 24px)) !important;
+}
+.ggbuddy-bar.support-nudge.layout-edge {
+  bottom: 0 !important; left: 0 !important; right: 0 !important;
+  transform: none !important; width: 100% !important;
+}
+.ggbuddy-bar.support-nudge .ggbuddy-bar-shell {
+  flex-wrap: nowrap !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  padding: 10px 16px !important;
+}
+.ggbuddy-bar.support-nudge.layout-edge .ggbuddy-bar-shell {
+  border-radius: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+.ggbuddy-bar-cluster {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  width: auto !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: static !important;
+}
+.ggbuddy-bar.support-nudge .ggbuddy-bar-main {
+  display: contents !important;
+}
+.ggbuddy-bar.support-nudge .ggbuddy-link {
+  margin-left: 0 !important;
+}
+.ggbuddy-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 3px 8px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  position: static !important;
+  float: none !important;
+  line-height: 1.2 !important;
+}
+.ggbuddy-badge-warn {
+  background: rgba(0,0,0,0.22) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+}
+.ggbuddy-badge-save {
+  background: var(--ggb-cta-bg, #ffe347) !important;
+  color: var(--ggb-cta-fg, #064e3b) !important;
+}
+.ggbuddy-cta {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+  background: var(--ggb-cta-bg, #ffe347) !important;
+  color: var(--ggb-cta-fg, #064e3b) !important;
+  font-weight: 900 !important;
+  font-size: 12px !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  position: static !important;
+}
+.ggbuddy-cta:hover { filter: brightness(1.05); text-decoration: none !important; }
+.ggbuddy-divider {
+  width: 1px !important;
+  height: 28px !important;
+  background: rgba(255,255,255,0.25) !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+.ggbuddy-bar:not(.support-nudge) .ggbuddy-bar-shell {
+  justify-content: center !important;
+}
+.ggbuddy-bar:not(.support-nudge) .ggbuddy-bar-main {
+  flex: 0 1 auto !important;
+}
+.ggbuddy-logo {
+  display: inline-block !important;
+  font-weight: 900 !important; font-size: 13px !important;
+  color: var(--ggb-accent, #048044) !important;
+  white-space: nowrap !important; flex-shrink: 0 !important; margin: 0 !important; padding: 0 !important;
+  position: static !important; float: none !important;
+}
+.ggbuddy-bar.support-nudge .ggbuddy-logo { color: #fff !important; }
+.ggbuddy-bar-main {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  margin: 0 !important; padding: 0 !important;
+  position: static !important; float: none !important;
+}
+.ggbuddy-title {
+  display: inline-block !important;
+  font-weight: 700 !important; max-width: 180px !important;
+  overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important;
+  margin: 0 !important; padding: 0 !important; position: static !important; float: none !important;
+  color: inherit !important;
+}
+.ggbuddy-bar.support-nudge .ggbuddy-title {
+  max-width: 160px !important;
+}
+.ggbuddy-prices {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 12px !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important; padding: 0 !important;
+  position: static !important; float: none !important;
+}
+.ggbuddy-price-col {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+  margin: 0 !important; padding: 0 !important;
+  position: static !important; float: none !important;
+}
+.ggbuddy-price-label {
+  display: block !important;
+  font-size: 10px !important; text-transform: uppercase !important; letter-spacing: 0.04em !important;
+  color: var(--ggb-muted) !important; font-weight: 600 !important; line-height: 1.2 !important;
+  margin: 0 !important; padding: 0 !important; position: static !important; float: none !important;
+  white-space: nowrap !important;
+}
+.ggbuddy-price-value {
+  display: block !important;
+  font-weight: 700 !important; white-space: nowrap !important; line-height: 1.2 !important;
+  margin: 0 !important; padding: 0 !important; position: static !important; float: none !important;
+  color: inherit !important; font-size: 13px !important;
+}
+.ggbuddy-price-col.best .ggbuddy-price-value {
+  color: var(--ggb-best) !important; font-weight: 900 !important; font-size: 15px !important;
+}
+.ggbuddy-hl {
+  display: inline-block !important;
+  background: var(--ggb-hl-bg) !important; color: #fff !important; padding: 2px 7px !important;
+  border-radius: 4px !important; font-size: 11px !important; font-weight: 700 !important;
+  white-space: nowrap !important; flex-shrink: 0 !important;
+  margin: 0 !important; position: static !important; float: none !important;
+}
+.ggbuddy-link {
+  display: inline-block !important;
+  color: var(--ggb-link) !important; font-weight: 700 !important; font-size: 12px !important;
+  text-decoration: none !important; white-space: nowrap !important; margin-left: 0 !important;
+  flex-shrink: 0 !important; padding: 0 !important; position: static !important; float: none !important;
+  background: none !important; border: none !important;
+}
+.ggbuddy-link:hover { text-decoration: underline !important; }
+.ggbuddy-support {
+  display: inline-block !important;
+  font-size: 11px !important; color: var(--ggb-muted) !important; max-width: 260px !important;
+  line-height: 1.3 !important; margin: 0 !important; padding: 0 !important;
+  position: static !important; float: none !important; white-space: normal !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-bar-cluster > :not(.ggbuddy-logo):not(.ggbuddy-mini-price):not(.ggbuddy-mini-hint) {
+  display: none !important;
+}
+.ggbuddy-actions {
+  display: flex !important; align-items: center !important; gap: 2px !important;
+  flex-shrink: 0 !important; position: relative !important; margin: 0 !important; padding: 0 !important;
+  float: none !important;
+}
+.ggbuddy-icon-btn {
+  background: transparent !important; border: none !important; color: var(--ggb-muted) !important;
+  cursor: pointer !important; width: 28px !important; height: 28px !important; border-radius: 6px !important;
+  display: inline-flex !important; align-items: center !important; justify-content: center !important;
+  padding: 0 !important; margin: 0 !important; position: static !important; float: none !important;
+  font-size: 16px !important; line-height: 1 !important;
+}
+.ggbuddy-icon-btn:hover { background: var(--ggb-hover) !important; color: var(--ggb-fg) !important; }
+.ggbuddy-menu {
+  position: absolute !important; right: 0 !important; bottom: calc(100% + 6px) !important;
+  min-width: 200px !important; background: var(--ggb-menu-bg) !important;
+  border: 1px solid var(--ggb-border) !important; border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25) !important; padding: 4px !important;
+  display: none !important; z-index: 2 !important; margin: 0 !important;
+}
+.ggbuddy-menu.open { display: block !important; }
+.ggbuddy-menu button {
+  display: flex !important; align-items: center !important; gap: 8px !important; width: 100% !important;
+  background: transparent !important; border: none !important; color: var(--ggb-fg) !important;
+  cursor: pointer !important; padding: 8px 10px !important; border-radius: 7px !important;
+  font-size: 12px !important; text-align: left !important; margin: 0 !important;
+  position: static !important; float: none !important;
+}
+.ggbuddy-menu button:hover { background: var(--ggb-hover) !important; }
+.ggbuddy-bar.is-minimized {
+  bottom: 16px !important; left: auto !important; right: 12px !important;
+  transform: none !important; width: auto !important; max-width: none !important;
+}
+.ggbuddy-bar.is-minimized.layout-edge {
+  bottom: 16px !important; left: auto !important; right: 12px !important;
+  width: auto !important; transform: none !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-bar-shell {
+  padding: 8px 12px !important; border-radius: 999px !important; cursor: pointer !important;
+  gap: 8px !important; flex-wrap: nowrap !important; width: auto !important;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35) !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-bar-main,
+.ggbuddy-bar.is-minimized .ggbuddy-actions,
+.ggbuddy-bar.is-minimized .ggbuddy-support {
+  display: none !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-logo {
+  display: inline-block !important;
+}
+.ggbuddy-mini-price {
+  display: none !important;
+}
+.ggbuddy-mini-hint {
+  display: none !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-mini-price {
+  display: inline-block !important;
+  font-weight: 900 !important;
+  font-size: 13px !important;
+  color: var(--ggb-best) !important;
+  white-space: nowrap !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: static !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-mini-hint {
+  display: inline-block !important;
+  font-size: 11px !important;
+  color: var(--ggb-muted) !important;
+  white-space: nowrap !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: static !important;
+}
+.ggbuddy-bar.ggbuddy-no-anim { animation: none !important; }
+@keyframes ggBuddySlideUp {
+  from { transform: translateX(-50%) translateY(16px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+.ggbuddy-bar.layout-edge { animation-name: ggBuddySlideUpEdge; }
+@keyframes ggBuddySlideUpEdge {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.ggbuddy-bar.is-minimized .ggbuddy-bar-cluster > :not(.ggbuddy-logo):not(.ggbuddy-mini-price):not(.ggbuddy-mini-hint) {
+  display: none !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-bar-shell {
+  justify-content: center !important;
+}
+@media (max-width: 900px) {
+  .ggbuddy-badge-warn { display: none !important; }
+  .ggbuddy-divider { display: none !important; }
+  .ggbuddy-price-col:not(.best) { display: none !important; }
+}
+@media (max-width: 720px) {
+  .ggbuddy-title { max-width: 110px !important; }
+  .ggbuddy-link { display: none !important; }
+  .ggbuddy-badge-save { display: none !important; }
+  .ggbuddy-hl { display: none !important; }
+}
+`;
+  }
+
+  function renderOverlay(appId, game, detectedStore, officialOnly = false, prefs = {}) {
     const p = game.prices;
     if (!p) return;
 
@@ -1221,81 +1851,186 @@
     const histLow = Math.min(histRetail, histKey);
     const isHistLow = histLow !== Infinity && best <= histLow * 1.05;
 
-    removeOverlay();
-    overlayEl = document.createElement('div');
-    overlayEl.id = 'gg-deals-overlay';
-
-    const retailStr = retail !== null ? `${retail} ${currency}` : '—';
-    const keyStr = keyshop !== null ? `${keyshop} ${currency}` : '—';
-    const keyshopBlock = officialOnly
-      ? ''
-      : `<span style="color:rgba(255,255,255,0.5)">|</span><span>🔑 <b>${keyStr}</b></span>`;
-    const bestStr = `${best} ${currency}`;
-    const histTag = isHistLow ? `<span style="background:#048044;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:700;margin-left:8px">⭐ ${escapeOverlay(chrome.i18n.getMessage('overlayHistoricalLow') || 'Historical Low')}</span>` : '';
-
     const isUnofficialPage = detectedStore && (
       detectedStore.includes('fitgirl-repacks') ||
       detectedStore.includes('igg-games.com') ||
       detectedStore.includes('gog-games')
     );
-    const supportLine = isUnofficialPage
-      ? `<span style="font-size:11px;color:rgba(255,255,255,0.75);margin-right:8px">${escapeOverlay(chrome.i18n.getMessage('overlaySupportDevs') || 'Support developers — get a deal:')}</span>`
+
+    const theme = resolveOverlayTheme(prefs);
+    const layout = prefs.overlayLayout === 'edge' ? 'edge' : 'rounded';
+    const retailStr = retail !== null ? `${retail} ${currency}` : '—';
+    const keyStr = keyshop !== null ? `${keyshop} ${currency}` : '—';
+    const bestStr = `${best} ${currency}`;
+
+    removeOverlay();
+    lastOverlayState = { appId, game, store: detectedStore };
+    overlayEl = document.createElement('div');
+    overlayEl.id = 'gg-deals-overlay';
+    overlayEl.style.cssText = [
+      'all: initial',
+      'position: fixed',
+      'inset: 0',
+      'width: 0',
+      'height: 0',
+      'overflow: visible',
+      'z-index: 2147483647',
+      'pointer-events: none',
+    ].join(';');
+
+    const shadow = overlayEl.attachShadow({ mode: 'open' });
+    const officialLabel = overlayMsg('overlayOfficial', 'Official');
+    const keyshopLabel = overlayMsg('overlayKeyshop', 'Keyshop');
+    const bestLabel = overlayMsg('overlayBestLabel', 'Best');
+    const histLabel = overlayMsg('overlayHistoricalLow', 'Historical Low');
+    const viewLabel = overlayMsg('overlayViewOnGgDeals', 'View on GG.deals →');
+    const hideLabel = overlayMsg('overlayHideOnSite', 'Always hide on this site');
+    const appearanceLabel = overlayMsg('overlayChangeAppearance', 'Change appearance');
+    const minimizeLabel = overlayMsg('overlayMinimize', 'Minimize');
+    const riskShort = overlayMsg('overlayBuyLegitShort', 'Buy legit — skip the malware risk');
+    const saveLabel = overlayMsg('overlayYouSave', 'You save');
+    const buyForLabel = overlayMsg('overlayBuyFor', 'Buy for');
+
+    let saveBadge = '';
+    if (retail !== null && best !== null && retail > best) {
+      const saved = Math.round((retail - best) * 100) / 100;
+      const pct = Math.round(((retail - best) / retail) * 100);
+      saveBadge = `<span class="ggbuddy-badge ggbuddy-badge-save">${escapeOverlay(saveLabel)} ${saved} ${escapeOverlay(currency)} (−${pct}%)</span>`;
+    }
+
+    const keyshopCol = officialOnly ? '' : `
+      <div class="ggbuddy-price-col">
+        <span class="ggbuddy-price-label">${escapeOverlay(keyshopLabel)}</span>
+        <span class="ggbuddy-price-value">${escapeOverlay(keyStr)}</span>
+      </div>`;
+
+    const histBadge = isHistLow
+      ? `<span class="ggbuddy-hl">★ ${escapeOverlay(histLabel)}</span>`
       : '';
 
-    overlayEl.innerHTML = `
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;max-width:960px;margin:0 auto">
-        <span style="font-weight:900;font-size:14px;color:#048044">GG.deals</span>
-        ${supportLine}
-        <span style="color:rgba(255,255,255,0.5)">|</span>
-        <span style="font-weight:700">${escapeOverlay(game.title || '')}</span>
-        <span style="color:rgba(255,255,255,0.5)">|</span>
-        <span>🏪 <b>${retailStr}</b></span>
-        ${keyshopBlock}
-        <span style="color:rgba(255,255,255,0.5)">|</span>
-        <span style="font-weight:900;font-size:15px;color:#4ade80">${escapeOverlay(chrome.i18n.getMessage('overlayBest', [bestStr]) || 'Best: ' + bestStr)}</span>
-        ${histTag}
-        ${game.url ? `<a href="${game.url}" target="_blank" style="color:#60a5fa;font-weight:700;font-size:12px;text-decoration:none;margin-left:auto">${escapeOverlay(chrome.i18n.getMessage('overlayViewOnGgDeals') || 'View on GG.deals →')}</a>` : ''}
-        <button id="gg-overlay-close" style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:18px;cursor:pointer;padding:0 4px;margin-left:4px">✕</button>
+    const barClass = [
+      'ggbuddy-bar',
+      `theme-${theme}`,
+      `layout-${layout}`,
+      isUnofficialPage ? 'support-nudge' : '',
+      overlayMinimized ? 'is-minimized' : '',
+    ].filter(Boolean).join(' ');
+
+    const warnBlock = isUnofficialPage
+      ? `<span class="ggbuddy-badge ggbuddy-badge-warn">⚠ ${escapeOverlay(riskShort)}</span><span class="ggbuddy-divider" aria-hidden="true"></span>`
+      : '';
+
+    const ctaBlock = game.url
+      ? `<a class="ggbuddy-cta" href="${escapeOverlay(game.url)}" target="_blank" rel="noopener">${escapeOverlay(buyForLabel)} ${escapeOverlay(bestStr)} →</a>`
+      : '';
+
+    shadow.innerHTML = `
+      <style>${getOverlayStyles()}</style>
+      <div class="${barClass}" role="region" aria-label="GG Buddy price bar">
+        <div class="ggbuddy-bar-shell" title="${overlayMinimized ? 'Click to expand' : ''}">
+          <div class="ggbuddy-bar-cluster">
+            <span class="ggbuddy-logo" title="GG Buddy">GG Buddy</span>
+            <span class="ggbuddy-mini-price">${escapeOverlay(bestStr)}</span>
+            <span class="ggbuddy-mini-hint">tap to expand</span>
+            ${warnBlock}
+            <span class="ggbuddy-title" title="${escapeOverlay(game.title || '')}">${escapeOverlay(game.title || '')}</span>
+            <div class="ggbuddy-prices">
+              <div class="ggbuddy-price-col">
+                <span class="ggbuddy-price-label">${escapeOverlay(officialLabel)}</span>
+                <span class="ggbuddy-price-value">${escapeOverlay(retailStr)}</span>
+              </div>
+              ${keyshopCol}
+              <div class="ggbuddy-price-col best">
+                <span class="ggbuddy-price-label">${escapeOverlay(bestLabel)}</span>
+                <span class="ggbuddy-price-value">${escapeOverlay(bestStr)}</span>
+              </div>
+            </div>
+            ${saveBadge}
+            ${histBadge}
+            ${ctaBlock}
+            <div class="ggbuddy-actions">
+              <div class="ggbuddy-menu" id="ggbuddy-bar-menu" role="menu">
+                <button type="button" data-action="hide-site" role="menuitem">${escapeOverlay(hideLabel)}</button>
+                <button type="button" data-action="appearance" role="menuitem">${escapeOverlay(appearanceLabel)}</button>
+                <button type="button" data-action="minimize" role="menuitem">${escapeOverlay(minimizeLabel)}</button>
+              </div>
+              <button type="button" class="ggbuddy-icon-btn" id="ggbuddy-bar-menu-btn" aria-label="Bar options" title="Options">⋮</button>
+              <button type="button" class="ggbuddy-icon-btn" id="ggbuddy-bar-minimize" aria-label="${escapeOverlay(minimizeLabel)}" title="${escapeOverlay(minimizeLabel)}">›</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
-    overlayEl.style.cssText = `
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 2147483647;
-      background: ${isUnofficialPage ? '#048044' : 'rgba(15,15,26,0.96)'}; 
-      backdrop-filter: blur(12px);
-      padding: 10px 20px; font-family: 'Lato', -apple-system, sans-serif;
-      font-size: 14.5px; color: #ffffff; border-top: 1px solid rgba(255,255,255,0.08);
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.35); animation: ggSlideUp 0.3s ease-out;
-    `;
-    
-    if (isUnofficialPage) {
-        overlayEl.innerHTML = overlayEl.innerHTML.replace(
-            /(GG\.deals)<\/span>/,
-            '$1</span><span style="margin-left:8px; font-weight:800; font-size:15px; color:#fff;">🛑 Is downloading this really worth the malware risk?</span>'
-        );
-        // Make sure all muted texts are pure white so they contrast the green bg
-        overlayEl.innerHTML = overlayEl.innerHTML.replace(/rgba\(255,255,255,0\.5\)/g, 'rgba(255,255,255,0.9)');
-        overlayEl.innerHTML = overlayEl.innerHTML.replace(/color:#4ade80/g, 'color:#ffe347; font-size:16px'); // High contrast best price
-        overlayEl.innerHTML = overlayEl.innerHTML.replace(/color:#048044/g, 'color:#ffffff'); // Logo to white
+    document.documentElement.appendChild(overlayEl);
+
+    const bar = shadow.querySelector('.ggbuddy-bar');
+    applyAccentToBar(bar, prefs);
+    const menu = shadow.querySelector('#ggbuddy-bar-menu');
+    const menuBtn = shadow.querySelector('#ggbuddy-bar-menu-btn');
+    const minimizeBtn = shadow.querySelector('#ggbuddy-bar-minimize');
+    const shell = shadow.querySelector('.ggbuddy-bar-shell');
+
+    function setMinimized(on) {
+      overlayMinimized = on;
+      bar?.classList.toggle('is-minimized', on);
+      if (shell) shell.title = on ? 'Click to expand' : '';
+      try { sessionStorage.setItem('ggbuddy-bar-minimized', on ? '1' : '0'); } catch { /* ignore */ }
+      if (menu) menu.classList.remove('open');
     }
 
+    menuBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu?.classList.toggle('open');
+    });
 
-    const style = document.createElement('style');
-    style.textContent = `@keyframes ggSlideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`;
-    overlayEl.appendChild(style);
+    minimizeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setMinimized(true);
+    });
 
-    document.body.appendChild(overlayEl);
+    shell?.addEventListener('click', (e) => {
+      if (overlayMinimized) {
+        e.stopPropagation();
+        setMinimized(false);
+      }
+    });
 
-    document.getElementById('gg-overlay-close')?.addEventListener('click', () => {
-      overlayDismissed = true;
-      removeOverlay();
+    menu?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      if (action === 'minimize') {
+        setMinimized(true);
+        return;
+      }
+      if (action === 'appearance') {
+        menu.classList.remove('open');
+        chrome.runtime.sendMessage({ action: 'openOverlaySettings' }).catch(() => {});
+        return;
+      }
+      if (action === 'hide-site') {
+        const host = normalizeHost(window.location.hostname);
+        const hosts = Array.from(new Set([...getExcludedHosts(prefs), host]));
+        await saveExcludedHosts(hosts);
+        chrome.runtime.sendMessage({ action: 'overlaySiteStatus', excluded: true }).catch(() => {});
+        overlayDismissed = true;
+        removeOverlay();
+      }
     });
   }
+
+  // Close bar menu when clicking outside (registered once)
+  document.addEventListener('click', (e) => {
+    if (!overlayEl?.shadowRoot) return;
+    const menu = overlayEl.shadowRoot.querySelector('#ggbuddy-bar-menu');
+    if (!menu || !menu.classList.contains('open')) return;
+    if (e.composedPath && e.composedPath().includes(overlayEl)) return;
+    menu.classList.remove('open');
+  }, true);
 
   function escapeOverlay(text) {
     const d = document.createElement('div'); d.textContent = text; return d.innerHTML;
   }
 })();
-
-
-

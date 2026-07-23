@@ -21,6 +21,9 @@ let userPrefs = {
   compact: false,
   dealScores: true,
   overlay: true,
+  overlayTheme: 'follow',
+  overlayLayout: 'rounded',
+  excludedHosts: [],
   autoCheckWishlist: false,
   checkFreq: 360,
   syncEnabled: true,
@@ -405,7 +408,7 @@ function savePrefs() {
 
 // Load local data first (fast), then merge synced data on top
 chrome.storage.local.get(
-  ['wishlist', 'priceHistory', 'notificationSettings', 'lastRegion', 'apiKey', 'contextMenuAppId', 'rateLimitInfo', 'recentSearches', 'userPrefs', 'imageOverrides'],
+  ['wishlist', 'priceHistory', 'notificationSettings', 'lastRegion', 'apiKey', 'contextMenuAppId', 'rateLimitInfo', 'recentSearches', 'userPrefs', 'imageOverrides', 'popupFocusSection'],
   (localResult) => {
     if (localResult.priceHistory) priceHistory = localResult.priceHistory;
     if (localResult.lastRegion) {
@@ -466,11 +469,22 @@ function finishInit(result) {
     gameIdInput.value = result.contextMenuAppId;
     switchTab('search');
     performSearch();
+  } else if (result.popupFocusSection === 'overlayBar') {
+    chrome.storage.local.remove('popupFocusSection');
+    switchTab('settings');
+    displaySettings();
+    const section = document.getElementById('overlayBarSettings');
+    if (section) {
+      setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      section.style.outline = '2px solid var(--gg-accent)';
+      setTimeout(() => { section.style.outline = ''; }, 1600);
+    }
   } else {
     loadDetectedGames();
   }
   loadRecentSearches();
   maybeStartOnboarding(result);
+  refreshGgDealsImportUi();
 }
 
 // Listen for system theme changes. Firefox ESR/older WebExtension contexts may
@@ -495,7 +509,10 @@ function switchTab(tab) {
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
 
-  if (tab === 'wishlist') displayWishlist();
+  if (tab === 'wishlist') {
+    displayWishlist();
+    refreshGgDealsImportUi();
+  }
   if (tab === 'settings') displaySettings();
   if (tab === 'bundles') loadActiveBundles();
   if (tab === 'search') loadRecentSearches();
@@ -2252,6 +2269,226 @@ document.getElementById('exportWishlistBtn')?.addEventListener('click', () => {
     navigator.clipboard.writeText(text).then(() => showToast(t('exportedCopied') || 'Copied to clipboard!', 'success'));
 });
 
+document.getElementById('importGgDealsBtn')?.addEventListener('click', () => {
+  const panel = document.getElementById('ggDealsImportPanel');
+  if (!panel) return;
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    document.getElementById('ggDealsWishlistUrl')?.focus();
+    refreshGgDealsImportUi();
+  }
+});
+
+document.getElementById('ggDealsImportConfirm')?.addEventListener('click', () => {
+  importGgDealsWishlistShare();
+});
+
+document.getElementById('ggDealsWishlistUrl')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    importGgDealsWishlistShare();
+  }
+});
+
+document.getElementById('ggDealsUnresolvedToggle')?.addEventListener('click', () => {
+  const list = document.getElementById('ggDealsUnresolvedList');
+  if (!list) return;
+  list.classList.toggle('hidden');
+});
+
+document.getElementById('ggDealsUnresolvedCopy')?.addEventListener('click', async () => {
+  const job = await getGgDealsImportJob();
+  const titles = (job?.unresolved || []).map((g) => g.title).filter(Boolean);
+  if (!titles.length) return;
+  try {
+    await navigator.clipboard.writeText(titles.join('\n'));
+    showToast(tf('importGgDealsCopied', 'Unresolved titles copied'), 'success');
+  } catch {
+    showToast(tf('importGgDealsFailed', 'Could not import that wishlist'), 'error');
+  }
+});
+
+document.getElementById('ggDealsUnresolvedDismiss')?.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ action: 'clearGgDealsImportJob' }, () => {
+    renderGgDealsUnresolved(null);
+    const status = document.getElementById('ggDealsImportStatus');
+    if (status) status.textContent = '';
+  });
+});
+
+let ggDealsImportPollTimer = null;
+let ggDealsImportHandledJobId = null;
+
+function stopGgDealsImportPoll() {
+  if (ggDealsImportPollTimer) {
+    clearInterval(ggDealsImportPollTimer);
+    ggDealsImportPollTimer = null;
+  }
+}
+
+function getGgDealsImportJob() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'getGgDealsImportJob' }, (resp) => {
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(resp?.job || null);
+    });
+  });
+}
+
+function unresolvedGameUrl(game) {
+  if (game?.slug) return `https://gg.deals/game/${encodeURIComponent(game.slug)}/`;
+  if (game?.title) return `https://gg.deals/games/?title=${encodeURIComponent(game.title)}`;
+  return 'https://gg.deals/';
+}
+
+function renderGgDealsUnresolved(job) {
+  const wrap = document.getElementById('ggDealsUnresolvedWrap');
+  const list = document.getElementById('ggDealsUnresolvedList');
+  const countEl = document.getElementById('ggDealsUnresolvedCount');
+  if (!wrap || !list) return;
+
+  const unresolved = Array.isArray(job?.unresolved) ? job.unresolved : [];
+  if (!unresolved.length || (job.status !== 'done' && job.status !== 'error')) {
+    wrap.classList.add('hidden');
+    list.innerHTML = '';
+    list.classList.add('hidden');
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  wrap.classList.remove('hidden');
+  if (countEl) countEl.textContent = `(${unresolved.length})`;
+  list.innerHTML = unresolved.map((game) => {
+    const raw = String(game.title || 'Unknown');
+    const title = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+    const href = unresolvedGameUrl(game);
+    const linkLabel = tf('importGgDealsViewOnGg', 'GG.deals');
+    return `<li><span class="title" title="${title}">${title}</span><a href="${href}" target="_blank" rel="noopener noreferrer">${linkLabel}</a></li>`;
+  }).join('');
+}
+
+function applyGgDealsImportJobToUi(job, { toastOnDone = false } = {}) {
+  const status = document.getElementById('ggDealsImportStatus');
+  const confirmBtn = document.getElementById('ggDealsImportConfirm');
+  const panel = document.getElementById('ggDealsImportPanel');
+  if (!job) {
+    if (confirmBtn) confirmBtn.disabled = false;
+    renderGgDealsUnresolved(null);
+    return;
+  }
+
+  // Stale running job (worker died) — treat as failed so user can retry
+  if (job.status === 'running') {
+    const age = Date.now() - (job.updatedAt || job.startedAt || 0);
+    if (age > 120000) {
+      job = {
+        ...job,
+        status: 'error',
+        message: job.error || 'Import was interrupted. Click Import to try again.',
+      };
+    }
+  }
+
+  if (panel && (job.status === 'running' || (job.unresolved || []).length || job.status === 'error')) {
+    panel.classList.remove('hidden');
+  }
+
+  if (status && job.message) status.textContent = job.message;
+  if (confirmBtn) confirmBtn.disabled = job.status === 'running';
+
+  if (job.status === 'running') {
+    renderGgDealsUnresolved(null);
+    return;
+  }
+
+  renderGgDealsUnresolved(job);
+
+  if (job.status === 'done' && toastOnDone && job.id && job.id !== ggDealsImportHandledJobId) {
+    ggDealsImportHandledJobId = job.id;
+    // Reload wishlist from storage (background already saved)
+    chrome.storage.local.get(['wishlist'], (result) => {
+      if (Array.isArray(result.wishlist)) {
+        wishlist = result.wishlist;
+        displayWishlist();
+      }
+    });
+    const owner = job.owner || 'GG.deals';
+    const doneMsg = tf(
+      'importGgDealsDone',
+      `Imported ${job.added || 0} from ${owner} (${job.skipped || 0} duplicates, ${(job.unresolved || []).length} unresolved)`,
+      String(job.added || 0),
+      owner,
+      String(job.skipped || 0),
+      String((job.unresolved || []).length)
+    );
+    showToast(doneMsg, (job.added || 0) > 0 ? 'success' : 'info', 5000);
+  }
+}
+
+function startGgDealsImportPoll() {
+  stopGgDealsImportPoll();
+  ggDealsImportPollTimer = setInterval(async () => {
+    const job = await getGgDealsImportJob();
+    applyGgDealsImportJobToUi(job, { toastOnDone: true });
+    if (!job || job.status !== 'running') stopGgDealsImportPoll();
+  }, 500);
+}
+
+async function refreshGgDealsImportUi() {
+  const job = await getGgDealsImportJob();
+  applyGgDealsImportJobToUi(job, { toastOnDone: false });
+  if (job?.status === 'running') startGgDealsImportPoll();
+}
+
+async function importGgDealsWishlistShare() {
+  const input = document.getElementById('ggDealsWishlistUrl');
+  const status = document.getElementById('ggDealsImportStatus');
+  const confirmBtn = document.getElementById('ggDealsImportConfirm');
+  const url = (input?.value || '').trim();
+  if (!url) {
+    if (status) status.textContent = tf('importGgDealsEmptyUrl', 'Paste a GG.deals wishlist share URL first');
+    showToast(tf('importGgDealsEmptyUrl', 'Paste a GG.deals wishlist share URL first'), 'error');
+    return;
+  }
+
+  if (confirmBtn) confirmBtn.disabled = true;
+  if (status) status.textContent = tf('importGgDealsWorking', 'Fetching shared wishlist…');
+  renderGgDealsUnresolved(null);
+
+  try {
+    const resp = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'importGgDealsWishlist', url }, resolve);
+    });
+
+    if (!resp || !resp.success) {
+      const err = resp?.error || tf('importGgDealsFailed', 'Could not import that wishlist');
+      if (status) status.textContent = err;
+      showToast(err, 'error');
+      if (confirmBtn) confirmBtn.disabled = false;
+      return;
+    }
+
+    if (status) {
+      status.textContent = resp.job?.message
+        || tf('importGgDealsRunning', 'Import running in the background…');
+    }
+    showToast(tf('importGgDealsRunning', 'Import running in the background…'), 'info', 2500);
+    startGgDealsImportPoll();
+  } catch (err) {
+    const msg = err?.message || tf('importGgDealsFailed', 'Could not import that wishlist');
+    if (status) status.textContent = msg;
+    showToast(msg, 'error');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+}
+
 function exportWishlist() {
   const data = JSON.stringify({ version: 1, exported: new Date().toISOString(), wishlist }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
@@ -2452,6 +2689,11 @@ function displaySettings() {
   if (regionSettingSelect) {
     regionSettingSelect.value = userPrefs.region || 'us';
   }
+  const overlayThemeEl = document.getElementById('overlayTheme');
+  if (overlayThemeEl) overlayThemeEl.value = userPrefs.overlayTheme || 'follow';
+  const overlayLayoutEl = document.getElementById('overlayLayout');
+  if (overlayLayoutEl) overlayLayoutEl.value = userPrefs.overlayLayout === 'edge' ? 'edge' : 'rounded';
+  renderExcludedHostsList();
 
   chrome.storage.local.get(['priceCache'], (r) => {
     document.getElementById('cacheCount').textContent = Object.keys(r.priceCache || {}).length;
@@ -2466,6 +2708,22 @@ function displaySettings() {
   document.querySelectorAll('#accentPicker .accent-opt').forEach((opt) => {
     opt.classList.toggle('active', opt.dataset.accent === userPrefs.accent);
   });
+}
+
+function renderExcludedHostsList() {
+  const list = document.getElementById('excludedHostsList');
+  if (!list) return;
+  const hosts = Array.isArray(userPrefs.excludedHosts) ? userPrefs.excludedHosts : [];
+  if (hosts.length === 0) {
+    list.innerHTML = `<span class="helper-text">${escapeHtml(tf('excludedSitesEmpty', 'No sites hidden'))}</span>`;
+    return;
+  }
+  list.innerHTML = hosts.map((host) => `
+    <div class="excluded-host-row" data-host="${escapeAttr(host)}">
+      <span>${escapeHtml(host)}</span>
+      <button type="button" data-action="remove-excluded">${escapeHtml(tf('excludedSiteRemove', 'Restore'))}</button>
+    </div>
+  `).join('');
 }
 
 // Settings event listeners (once)
@@ -2516,6 +2774,36 @@ function wireSettings() {
     savePrefs();
     showToast(e.target.checked ? 'Official stores only enabled' : 'All stores enabled', 'info');
   });
+  const overlayThemeEl = document.getElementById('overlayTheme');
+  if (overlayThemeEl) {
+    overlayThemeEl.addEventListener('change', (e) => {
+      userPrefs.overlayTheme = e.target.value || 'follow';
+      savePrefs();
+      showToast(tf('overlayThemeSaved', 'Price bar theme updated'), 'info');
+    });
+  }
+  const overlayLayoutEl = document.getElementById('overlayLayout');
+  if (overlayLayoutEl) {
+    overlayLayoutEl.addEventListener('change', (e) => {
+      userPrefs.overlayLayout = e.target.value === 'edge' ? 'edge' : 'rounded';
+      savePrefs();
+      showToast(tf('overlayLayoutSaved', 'Price bar layout updated'), 'info');
+    });
+  }
+  const excludedList = document.getElementById('excludedHostsList');
+  if (excludedList) {
+    excludedList.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="remove-excluded"]');
+      if (!btn) return;
+      const row = btn.closest('[data-host]');
+      const host = row?.dataset?.host;
+      if (!host) return;
+      userPrefs.excludedHosts = (userPrefs.excludedHosts || []).filter((h) => h !== host);
+      savePrefs();
+      renderExcludedHostsList();
+      showToast(tf('excludedSiteRestored', 'Site restored — reload the page to show the bar'), 'success');
+    });
+  }
   document.getElementById('autoCheckWishlist').addEventListener('change', (e) => {
     userPrefs.autoCheckWishlist = e.target.checked;
     savePrefs();

@@ -4,7 +4,7 @@ A Chrome and Firefox extension that automatically compares PC game prices across
 
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-blue?logo=googlechrome&logoColor=white)
 [![Firefox Add-on](https://img.shields.io/badge/Firefox-Add--on-orange?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/firefox/addon/gg-buddy/)
-![Version](https://img.shields.io/badge/version-2.8.1-green)
+![Version](https://img.shields.io/badge/version-2.8.2-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
@@ -13,13 +13,13 @@ A Chrome and Firefox extension that automatically compares PC game prices across
 
 🧩 **Steam App, Package & Bundle Support** — Steam `app/`, `sub/`, and `bundle/` URLs use the matching GG.deals API endpoints with package/bundle deal cards
 
-💰 **Inline Price Overlay** — Floating bar on store pages shows the best price; with **Official Stores Only**, keyshops are hidden and only official retail is shown
+💰 **Inline Price Overlay** — Floating or edge-to-edge price bar on product pages with Official / Keyshop / Best columns; minimize, per-site hide, and theme/layout options in Settings
 
 🏆 **Deal Score & Historical Charts** — Smart rating based on discount depth and visual sparkline charts inside the dashboard
 
 📊 **Smart Dashboard** — Shows price drops, micro-charts, and historical lows for your wishlisted games
 
-💜 **Wishlist & Alerts** — Track games and get notified when prices drop below your target. Export your list to the clipboard
+💜 **Wishlist & Alerts** — Track games and get notified when prices drop below your target. Import a public GG.deals wishlist share link (runs in the background, even if you close the popup), review unresolved titles, or export your list to the clipboard
 
 💾 **Cross-Browser Backup & Restore** — Export wishlist, alerts, preferences, API key, history, and custom images as JSON so you can move between Chrome and Firefox
 

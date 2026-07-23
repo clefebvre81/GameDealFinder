@@ -5,71 +5,45 @@ This document tracks the release status of GG Buddy across different platforms.
 ## 🏪 Store Status
 
 ### 🌐 Chrome Web Store
-- **Current Version**: 2.8.0
-- **Status**: 🔄 Checking...
+- **Current Version (live)**: check store listing
+- **Submitting**: **2.8.2**
+- **Status**: 📦 Ready to upload
 - **Extension ID**: `fcilncfeaahfckkfeobdacblbijhegjc`
 - **Store URL**: https://chromewebstore.google.com/detail/gg-buddy/fcilncfeaahfckkfeobdacblbijhegjc
-- **Last Updated**: 2026-05-08
-- **Review Status**: Pending submission
+- **Package**: `dist-release/ggbuddy-chrome-2.8.2.zip`
+- **What’s new text**: `store-whats-new-2.8.2.txt`
+- **Full description**: `chrome-store-description.txt`
+- **Last Updated**: 2026-07-23
+- **Review Status**: Ready for submission
 
 ### 🦊 Firefox Add-ons
-- **Current Version**: 2.8.0
-- **Status**: 🔄 Checking...
+- **Current Version (live)**: check store listing
+- **Submitting**: **2.8.2**
+- **Status**: 📦 Ready to upload
 - **Extension ID**: `ggbuddy@example.com`
 - **Store URL**: https://addons.mozilla.org/firefox/addon/gg-buddy/
-- **Last Updated**: 2026-05-08
-- **Review Status**: Submitted for review
+- **Package**: `dist-release/ggbuddy-firefox-2.8.2.zip`
+- **What’s new text**: `store-whats-new-2.8.2.txt`
+- **Last Updated**: 2026-07-23
+- **Review Status**: Ready for submission
 
 ## 📦 GitHub Releases
-- **Latest Release**: v2.8.0
-- **Release Date**: 2026-05-08
+- **Latest Release**: v2.8.2
+- **Release Date**: 2026-07-23
 - **Download Assets**:
-  - ✅ `ggbuddy-chrome-2.8.0.zip` - Ready for Chrome upload
-  - ✅ `ggbuddy-firefox-2.8.0.zip` - Ready for Firefox upload
-  - ✅ `ggbuddy-chrome.zip` - Latest Chrome version
-  - ✅ `ggbuddy-firefox.zip` - Latest Firefox version
+  - ✅ `ggbuddy-chrome-2.8.2.zip` — Chrome Web Store upload
+  - ✅ `ggbuddy-firefox-2.8.2.zip` — Firefox Add-ons upload
+  - ✅ `ggbuddy-chrome.zip` — latest Chrome alias (if published on release)
+  - ✅ `ggbuddy-firefox.zip` — latest Firefox alias (if published on release)
 
-## 🔄 Development Status
+## 📋 Store submission checklist (2.8.2)
 
-### 🏗️ Work in Progress
-- [ ] GitHub Actions workflow optimization
-- [ ] Store submission automation
-- [ ] Version synchronization system
-
-### ✅ Completed
-- [x] GitHub installation system
-- [x] Automated build scripts
-- [x] Cross-platform compatibility
-- [x] Release tracking system
-
-## 📋 Release Checklist Template
-
-### For New Releases
-1. **Development**
-   - [ ] Update version numbers in manifests
-   - [ ] Update package.json version
-   - [ ] Test functionality locally
-   - [ ] Update CHANGELOG.md
-
-2. **Build & Release**
-   - [ ] Run `npm run build-release`
-   - [ ] Create Git tag
-   - [ ] Push to GitHub
-   - [ ] Verify GitHub Actions success
-
-3. **Store Uploads**
-   - [ ] Download Chrome ZIP from GitHub release
-   - [ ] Upload to Chrome Developer Dashboard
-   - [ ] Submit for Chrome review
-   - [ ] Download Firefox ZIP from GitHub release
-   - [ ] Upload to Firefox Developer Hub
-   - [ ] Submit for Firefox review
-
-4. **Post-Release**
-   - [ ] Update store status in this file
-   - [ ] Close release issue
-   - [ ] Update README if needed
-   - [ ] Announce release
+1. [ ] Reload / smoke-test unpacked build locally (Chrome + Firefox)
+2. [ ] Run `npm run build-release` (zips in `dist-release/`)
+3. [ ] Push git tag `v2.8.2` / GitHub release with zips
+4. [ ] **Chrome**: Developer Dashboard → upload `ggbuddy-chrome-2.8.2.zip` → paste What’s new from `store-whats-new-2.8.2.txt` → refresh description from `chrome-store-description.txt` if needed → Submit for review
+5. [ ] **Firefox**: Developer Hub → upload `ggbuddy-firefox-2.8.2.zip` → paste release notes → Submit for review
+6. [ ] Update this file when each store goes live
 
 ## 🔗 Quick Links
 
@@ -77,9 +51,7 @@ This document tracks the release status of GG Buddy across different platforms.
 - [Firefox Developer Hub](https://addons.mozilla.org/developers/)
 - [GitHub Releases](https://github.com/Sn3akySl0th/gg-buddy/releases)
 - [GitHub Actions](https://github.com/Sn3akySl0th/gg-buddy/actions)
-- [Store Status Issue](https://github.com/Sn3akySl0th/gg-buddy/issues?q=is%3Aissue+is%3Aopen+label%3Astore-status)
 
 ---
 
-**Last Updated**: 2026-05-08  
-**Next Review**: 2026-05-09
+**Last Updated**: 2026-07-23

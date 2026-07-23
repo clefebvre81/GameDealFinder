@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.8.2] - 2026-07-23
+
+### Added
+
+- **Polished price bar** — Floating or edge-to-edge layouts, dark/light themes, Official / Keyshop / Best columns, historical-low badge, minimize-to-tab, and a ⋮ menu. Accent color follows your Settings choice; official and pirate pages share a denser layout (pirate pages still show the buy-legit nudge).
+- **Per-site hide** — "Always hide on this site" from the bar menu; restore sites from Settings → Price Bar. Toolbar icon turns gray on hidden sites.
+- **Product-URL gates** — The bar only appears on real product pages (not browse, search, or wishlist lists). Steam package/bundle product pages are included.
+- **Import GG.deals shared wishlist** — Paste a public `gg.deals/wishlist/share/...` link in the Wishlist tab to import games. All pages of large lists are fetched; Steam IDs are resolved in the background.
+
+### Fixed
+
+- **Import survives closing the popup** — Share-link import runs as a background job, saves games when finished, and shows a notification when done.
+- **Unresolved games list** — After import, expand Unresolved to review titles that could not be matched to Steam (GG.deals links, copy-all, dismiss).
+- **Large wishlist pagination** — Shared wishlists spanning many pages (`?page=2`…) now import fully, with a background-tab fallback if Cloudflare blocks later pages.
+
+---
+
 ## [2.8.1] - 2026-05-09
 
 ### Added

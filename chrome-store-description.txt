@@ -8,11 +8,11 @@ Never overpay for a game again. GG Buddy automatically detects games on store pa
 
 📉 Historical Price Trends — A built-in visual sparkline chart renders dynamically on game cards and your dashboard, letting you compare the live price against historical lows in an instant.
 
-💜 Steam & Epic Wishlist Support — Import games directly from your Steam and Epic Games Store wishlists into GG Buddy. Detect wishlisted games on store pages and add them to your deal tracker in one click.
+💜 Steam, Epic & GG.deals Wishlist Import — Import games from Steam and Epic wishlists, or paste a public GG.deals wishlist share link. Large shared lists import in the background (safe to close the popup), with an Unresolved list for titles that need a manual look.
 
 🛒 "Official Stores Only" Filter — Prefer to avoid grey-market keyshops? One toggle filters out third-party keyshops everywhere that matters: the extension popup (dashboard, search, wishlist views, deal scores), the inline price bar on store pages, and background wishlist price-drop notifications. All comparisons use official retailer pricing only while the option is enabled.
 
-💰 Inline Price Overlay — An elegant floating bar at the bottom of store pages shows the best price. With Official Stores Only on, keyshop prices are hidden from the bar and only official store pricing is used for the “best” line.
+💰 Inline Price Overlay — A polished floating or edge-to-edge bar on product pages shows Official, Keyshop, and Best prices with a historical-low badge. Minimize it, hide it per site from the ⋮ menu (toolbar icon turns gray), or theme/layout it in Settings. With Official Stores Only on, keyshop prices are hidden.
 
 🏆 Deal Score (0–100) — Each game gets an intelligent score automatically calculated based on discount depth, historical minimums, and price trends. See at a glance if a game is just a "Good" deal or an "Amazing" one!
 

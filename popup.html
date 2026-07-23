@@ -98,7 +98,30 @@
     <div id="wishlistTab" class="tab-content">
       <div id="wishlistHeader"></div>
       <div class="wishlist-toolbar">
-        <button id="exportWishlistBtn" class="btn-sm btn-outline">Export Wishlist</button>
+        <button id="exportWishlistBtn" class="btn-sm btn-outline" data-i18n="exportWishlistClipboard">Export Wishlist</button>
+        <button id="importGgDealsBtn" class="btn-sm btn-green" data-i18n="importGgDealsBtn">Import GG.deals link</button>
+      </div>
+      <div id="ggDealsImportPanel" class="ggdeals-import-panel hidden">
+        <label class="helper-text" for="ggDealsWishlistUrl" data-i18n="importGgDealsHelp">
+          Paste a public GG.deals wishlist share link
+        </label>
+        <div class="ggdeals-import-row">
+          <input type="url" id="ggDealsWishlistUrl" placeholder="https://gg.deals/wishlist/share/…" autocomplete="off" spellcheck="false" />
+          <button type="button" id="ggDealsImportConfirm" class="btn-sm btn-green" data-i18n="importGgDealsConfirm">Import</button>
+        </div>
+        <div id="ggDealsImportStatus" class="helper-text"></div>
+        <div class="helper-text" data-i18n="importGgDealsLargeHint">Import continues in the background — you can close this popup.</div>
+        <div id="ggDealsUnresolvedWrap" class="ggdeals-unresolved hidden">
+          <div class="ggdeals-unresolved-header">
+            <button type="button" id="ggDealsUnresolvedToggle" class="btn-sm btn-outline">
+              <span data-i18n="importGgDealsUnresolved">Unresolved</span>
+              (<span id="ggDealsUnresolvedCount"></span>
+            </button>
+            <button type="button" id="ggDealsUnresolvedCopy" class="btn-sm btn-outline" data-i18n="importGgDealsCopyUnresolved">Copy titles</button>
+            <button type="button" id="ggDealsUnresolvedDismiss" class="btn-sm btn-outline" data-i18n="importGgDealsDismiss">Dismiss</button>
+          </div>
+          <ul id="ggDealsUnresolvedList" class="ggdeals-unresolved-list hidden"></ul>
+        </div>
       </div>
       <div id="wishlistContent"></div>
       <input type="file" id="importFileInput" accept=".json" class="hidden" aria-label="Import wishlist JSON file" />
@@ -142,6 +165,37 @@
         </div>
         <div class="setting-row">
           <label><input type="checkbox" id="autoCheckWishlist" class="toggle-switch" /><span data-i18n="prefAutoCheck">Auto-check prices on open</span></label>
+        </div>
+      </div>
+      <div class="settings-group" id="overlayBarSettings">
+        <h3>📉 <span data-i18n="settingsPriceBar">Price Bar</span></h3>
+        <div class="setting-row">
+          <span data-i18n="prefOverlayTheme">Bar theme</span>
+          <select id="overlayTheme" aria-label="Price bar theme">
+            <option value="follow" data-i18n="overlayThemeFollow">Match popup theme</option>
+            <option value="dark" data-i18n="themeDark">Dark</option>
+            <option value="light" data-i18n="themeLight">Light</option>
+            <option value="system" data-i18n="themeSystem">System</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span data-i18n="prefOverlayLayout">Bar layout</span>
+          <select id="overlayLayout" aria-label="Price bar layout">
+            <option value="rounded" data-i18n="overlayLayoutRounded">Rounded floating</option>
+            <option value="edge" data-i18n="overlayLayoutEdge">Edge to edge</option>
+          </select>
+        </div>
+        <div class="helper-text" data-i18n="overlayBarHelp">
+          On store pages, use the ⋮ menu on the price bar to minimize it or always hide it on that site. The toolbar icon turns gray when a site is hidden.
+        </div>
+        <div class="helper-text" data-i18n="overlayBarAccentHelp">
+          Bar colors follow your Accent Color above. On piracy/repack sites the bar becomes a “buy legit” nudge using that same accent.
+        </div>
+        <div class="setting-row" style="align-items:flex-start">
+          <span data-i18n="prefExcludedSites">Hidden sites</span>
+          <div id="excludedHostsList" class="excluded-hosts-list">
+            <span class="helper-text" data-i18n="excludedSitesEmpty">No sites hidden</span>
+          </div>
         </div>
       </div>
       <div class="settings-group">

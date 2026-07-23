@@ -1,0 +1,5 @@
+GG Buddy 2.8.2 — Store “What’s new” (paste into Chrome & Firefox)
+
+Polished price bar on product pages: Official / Keyshop / Best, historical-low badge, minimize, per-site hide, themes & layouts.
+Import public GG.deals wishlist share links (all pages). Runs in the background — safe to close the popup. Review unresolved titles afterward.
+Product-page gates so the bar only shows on real product URLs (including Steam packages/bundles).
