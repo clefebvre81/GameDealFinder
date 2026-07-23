@@ -59,23 +59,23 @@ jobs:
         generate_release_notes: false
         draft: false
         prerelease: false
-        name: GG Buddy v${{ github.ref_name }}
+        name: GG Buddy ${{ github.ref_name }}
         body: |
-          ## GG Buddy v${{ github.ref_name }}
-          
-          ### Installation
-          
-          **Chrome Extension:**
-          - Download `ggbuddy-chrome-${{ github.ref_name }}.zip`
-          - Extract and load in Chrome developer mode
-          
-          **Firefox Extension:**
-          - Download `ggbuddy-firefox-${{ github.ref_name }}.zip`
-          - Extract and load in Firefox about:debugging
-          
-          ### Changes
-          - Added GitHub installation support
-          - Automated build and release system
-          - Cross-platform compatibility improvements
+          ## GG Buddy ${{ github.ref_name }}
+
+          See [CHANGELOG.md](https://github.com/Sn3akySl0th/gg-buddy/blob/main/CHANGELOG.md) for full notes.
+
+          ### Store packages
+          - **Chrome Web Store:** upload `ggbuddy-chrome-2.8.2.zip` (or the versioned zip matching this tag)
+          - **Firefox Add-ons:** upload `ggbuddy-firefox-2.8.2.zip`
+
+          ### What’s new (2.8.2)
+          - Polished price bar on product pages (Official / Keyshop / Best, historical-low badge, minimize, per-site hide)
+          - Import public GG.deals wishlist share links (all pages; runs in the background)
+          - Unresolved titles list after import
+          - Product-page gates (including Steam packages/bundles)
+
+          ### Sideload / GitHub install
+          Download the Chrome or Firefox zip from this release. See [GITHUB-INSTALL.md](https://github.com/Sn3akySl0th/gg-buddy/blob/main/GITHUB-INSTALL.md).
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
