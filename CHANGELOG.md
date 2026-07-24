@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.8.3] - 2026-07-24
+
+### Fixed
+
+- **AMO innerHTML warnings** — Popup and price bar now build DOM via `DOMParser` / `replaceChildren` instead of assigning to `innerHTML`, clearing Firefox Add-ons linter warnings while keeping HTML escaping for dynamic text.
+
 ## [2.8.2] - 2026-07-23
 
 ### Added

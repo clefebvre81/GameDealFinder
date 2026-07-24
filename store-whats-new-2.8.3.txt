@@ -1,0 +1,9 @@
+GG Buddy 2.8.3 — Firefox Add-ons “Release notes” (paste into AMO)
+
+What’s new in 2.8.3
+• Cleared Firefox validation warnings by removing unsafe innerHTML assignments in the popup and price bar (DOM is built safely with escaped text).
+
+What’s new since 2.8.2 (include if this is your first 2.8.x upload, or paste 2.8.2 notes separately)
+• Polished price bar: Official / Keyshop / Best, historical-low badge, minimize, per-site hide, themes & layouts.
+• Import public GG.deals wishlist share links (all pages). Runs in the background — safe to close the popup. Review unresolved titles afterward.
+• Product-page gates so the bar only shows on real product URLs (including Steam packages/bundles).

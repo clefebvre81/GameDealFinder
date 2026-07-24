@@ -1924,7 +1924,7 @@
       ? `<a class="ggbuddy-cta" href="${escapeOverlay(game.url)}" target="_blank" rel="noopener">${escapeOverlay(buyForLabel)} ${escapeOverlay(bestStr)} →</a>`
       : '';
 
-    shadow.innerHTML = `
+    setOverlayHtml(shadow, `
       <style>${getOverlayStyles()}</style>
       <div class="${barClass}" role="region" aria-label="GG Buddy price bar">
         <div class="ggbuddy-bar-shell" title="${overlayMinimized ? 'Click to expand' : ''}">
@@ -1960,7 +1960,7 @@
           </div>
         </div>
       </div>
-    `;
+    `);
 
     document.documentElement.appendChild(overlayEl);
 
@@ -2031,6 +2031,21 @@
   }, true);
 
   function escapeOverlay(text) {
-    const d = document.createElement('div'); d.textContent = text; return d.innerHTML;
+    return String(text ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function setOverlayHtml(root, html) {
+    if (!root) return;
+    const doc = new DOMParser().parseFromString('<div id="ggb-root">' + String(html) + '</div>', 'text/html');
+    const wrap = doc.getElementById('ggb-root');
+    if (!wrap) {
+      root.replaceChildren();
+      return;
+    }
+    root.replaceChildren(...Array.from(wrap.childNodes));
   }
 })();

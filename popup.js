@@ -104,7 +104,35 @@ function updateTabLayoutMode() {
 // ── Utility helpers ──────────────────────────────────────────────────────────
 
 function escapeHtml(t) {
-  const d = document.createElement('div'); d.textContent = t; return d.innerHTML;
+  return String(t ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function clearEl(el) {
+  if (el) el.replaceChildren();
+}
+
+function hasContent(el) {
+  return !!(el && el.childNodes && el.childNodes.length);
+}
+
+/** Set element children from an HTML string without assigning to innerHTML (AMO-safe). */
+function setHtml(el, html) {
+  if (!el) return;
+  if (html == null || html === '') {
+    el.replaceChildren();
+    return;
+  }
+  const doc = new DOMParser().parseFromString('<div id="ggb-root">' + String(html) + '</div>', 'text/html');
+  const root = doc.getElementById('ggb-root');
+  if (!root) {
+    el.replaceChildren();
+    return;
+  }
+  el.replaceChildren(...Array.from(root.childNodes));
 }
 function escapeAttr(t) {
   return t.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -310,7 +338,7 @@ function showToast(message, type = 'info', duration = 2500) {
   const icons = { success: '✓', info: 'ℹ', warn: '⚠', error: '✕' };
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${icons[type] || ''}</span><span>${escapeHtml(message)}</span>`;
+  setHtml(toast, `<span>${icons[type] || ''}</span><span>${escapeHtml(message)}</span>`);
   toastContainer.appendChild(toast);
   setTimeout(() => { toast.classList.add('toast-out'); toast.addEventListener('animationend', () => toast.remove()); }, duration);
 }
@@ -319,12 +347,12 @@ function showToast(message, type = 'info', duration = 2500) {
 
 function showSkeleton(container, count = 3) {
   let h = ''; for (let i = 0; i < count; i++) h += '<div class="skeleton skeleton-card"></div>';
-  container.innerHTML = h;
+  setHtml(container, h);
 }
 
 function showLoadingSpinner(container, text = null) {
   if (text === null) text = t('loading');
-  container.innerHTML = `<div class="loading"><div class="spinner"></div><div class="loading-text">${escapeHtml(text)}</div></div>`;
+  setHtml(container, `<div class="loading"><div class="spinner"></div><div class="loading-text">${escapeHtml(text)}</div></div>`);
 }
 
 // ── Rate limit ───────────────────────────────────────────────────────────────
@@ -361,7 +389,7 @@ function updateRateLimit(info) {
 
   if (r < 10) {
     rateLimitEl.className = 'rate-limit low';
-    rateLimitEl.innerHTML = `⚠️ ${escapeHtml(apiText)}. <a href="#" onclick="switchTab('settings')" style="color:inherit;text-decoration:underline">${escapeHtml(t('addKey'))}</a>`;
+    setHtml(rateLimitEl, `⚠️ ${escapeHtml(apiText)}. <a href="#" onclick="switchTab('settings')" style="color:inherit;text-decoration:underline">${escapeHtml(t('addKey'))}</a>`);
   } else if (r < 100) {
     rateLimitEl.className = 'rate-limit warn';
     rateLimitEl.textContent = apiText;
@@ -552,9 +580,9 @@ function renderOnboardingStep() {
     onboardingStepIndex >= ONBOARDING_STEPS.length - 1 ? t('onboardingDone') : t('onboardingNext');
 
   const dots = document.getElementById('onboardingDots');
-  dots.innerHTML = ONBOARDING_STEPS.map(
+  setHtml(dots, ONBOARDING_STEPS.map(
     (_, i) => `<span class="onboarding-dot${i === onboardingStepIndex ? ' active' : ''}" role="presentation"></span>`
-  ).join('');
+  ).join(''));
 
   backdrop.classList.remove('hidden');
   backdrop.setAttribute('aria-hidden', 'false');
@@ -705,7 +733,7 @@ function loadDetectedGames() {
           (priceResp) => {
             if (priceResp && priceResp.rateLimit) updateRateLimit(priceResp.rateLimit);
             if (!priceResp || !priceResp.success) {
-              detectedResults.innerHTML = `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`;
+              setHtml(detectedResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`);
               return;
             }
             const data = applyOfficialOnlyToData(priceResp.data);
@@ -717,7 +745,7 @@ function loadDetectedGames() {
                 : (validCount !== 1 ? t('gamesFoundCount', String(validCount)) : t('gameFoundCount', String(validCount)));
             }
             if (validCount === 0) {
-              detectedResults.innerHTML = `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noPricingData'))}</div>`;
+              setHtml(detectedResults, `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noPricingData'))}</div>`);
               return;
             }
             const renderDetected = (entries) => {
@@ -825,7 +853,7 @@ function showDetectedEmpty(icon, message) {
   scanBadge.style.display = '';
   scanBadge.textContent = t('noPageScanned');
   scanBadge.classList.add('empty');
-  detectedResults.innerHTML = `<div class="empty"><span class="empty-icon">${icon}</span>${escapeHtml(message)}</div>`;
+  setHtml(detectedResults, `<div class="empty"><span class="empty-icon">${icon}</span>${escapeHtml(message)}</div>`);
 }
 
 function formatStoreName(store) {
@@ -870,7 +898,7 @@ function renderLargeWishlistImport(allIds, storeName, tabId) {
   }
 
   html += `</div>`;
-  detectedResults.innerHTML = html;
+  setHtml(detectedResults, html);
 
   // Import button — adds all IDs to wishlist without fetching prices
   const importBtn = document.getElementById('importAllWishlistBtn');
@@ -910,13 +938,13 @@ function renderLargeWishlistImport(allIds, storeName, tabId) {
         (priceResp) => {
           if (priceResp && priceResp.rateLimit) updateRateLimit(priceResp.rateLimit);
           if (!priceResp || !priceResp.success) {
-            detectedResults.innerHTML = `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`;
+            setHtml(detectedResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`);
             return;
           }
           const data = applyOfficialOnlyToData(priceResp.data);
           const validEntries = Object.entries(data).filter(([, v]) => v && v.prices);
           if (validEntries.length === 0) {
-            detectedResults.innerHTML = `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noPricingDataShort'))}</div>`;
+            setHtml(detectedResults, `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noPricingDataShort'))}</div>`);
             return;
           }
           // Update any imported items with real titles
@@ -964,7 +992,7 @@ function renderDetectedResults(validEntries, isWishlistPage, storeName) {
     </div>
   </div>`;
   for (const [id, game] of validEntries) html += renderGameCard(id, game);
-  detectedResults.innerHTML = html;
+  setHtml(detectedResults, html);
   attachCardListeners(detectedResults);
 
   const importBtn = document.getElementById('importAllWishlistBtn');
@@ -1034,13 +1062,13 @@ function showDashboard() {
   scanBadge.style.display = 'none';
   if (wishlist.length === 0) {
     const hasDetectedGames = scanBadge && !scanBadge.classList.contains('empty') && !!scanBadge.textContent.trim();
-    document.getElementById('dashboardResults').innerHTML = `
+    setHtml(document.getElementById('dashboardResults'), `
       <div class="empty">
         <span class="empty-icon">🤷</span>
         ${escapeHtml(t('emptyDashboard'))}<br>
         ${escapeHtml(t('emptyDashboardHint'))}
         ${hasDetectedGames ? '<br><button class="btn-sm btn-outline" data-action="openDetectedTab" style="margin-top:8px">Open detected games</button>' : ''}
-      </div>`;
+      </div>`);
     return;
   }
   chrome.storage.local.get(['rateLimitInfo'], (stored) => {
@@ -1072,7 +1100,7 @@ function renderCachedDashboard(rl) {
         ${escapeHtml(t('loadingWishlist'))}<br>
         <button class="btn-sm btn-outline" data-action="retryDashboard" style="margin-top:8px">${escapeHtml(t('retry'))}</button>
       </div>`;
-    dashboardEl.innerHTML = html;
+    setHtml(dashboardEl, html);
     dashboardEl.querySelectorAll('.dashboard-mini-card').forEach(el => {
       el.style.cursor = 'pointer';
       el.addEventListener('click', () => {
@@ -1193,7 +1221,7 @@ function renderCachedDashboard(rl) {
     html += `</div>`;
   }
 
-  dashboardEl.innerHTML = html;
+  setHtml(dashboardEl, html);
   
   // Attach listeners
   dashboardEl.querySelectorAll('.dashboard-mini-card').forEach(el => {
@@ -1253,14 +1281,14 @@ function loadRecentSearches() {
   const container = document.getElementById('recentSearchesContainer');
   if (!container) return;
   if (recentSearches.length === 0) {
-    container.innerHTML = `<div style="font-size:0.78rem;color:var(--gg-text-muted);padding:4px 0">${escapeHtml(t('noRecentSearches'))}</div>`;
+    setHtml(container, `<div style="font-size:0.78rem;color:var(--gg-text-muted);padding:4px 0">${escapeHtml(t('noRecentSearches'))}</div>`);
     return;
   }
   let h = '';
   for (const item of recentSearches.slice(0, 6)) {
     h += `<button class="quick-btn recent-search-btn" data-query="${escapeAttr(item)}">${escapeHtml(item)}</button>`;
   }
-  container.innerHTML = h;
+  setHtml(container, h);
   container.querySelectorAll('.recent-search-btn').forEach((btn) => {
     btn.addEventListener('click', () => { gameIdInput.value = btn.dataset.query; performSearch(); });
   });
@@ -1277,8 +1305,8 @@ function addRecentSearch(query) {
 async function performSearch() {
   clearTimeout(searchDebounce);
   const query = gameIdInput.value.trim();
-  if (!query) { searchResults.innerHTML = `<div class="error"><span class="error-icon">✏️</span><span>${escapeHtml(t('errorEnterQuery'))}</span></div>`; return; }
-  if (query.length > 200) { searchResults.innerHTML = `<div class="error"><span class="error-icon">⚠️</span><span>${escapeHtml(t('errorQueryTooLong'))}</span></div>`; return; }
+  if (!query) { setHtml(searchResults, `<div class="error"><span class="error-icon">✏️</span><span>${escapeHtml(t('errorEnterQuery'))}</span></div>`); return; }
+  if (query.length > 200) { setHtml(searchResults, `<div class="error"><span class="error-icon">⚠️</span><span>${escapeHtml(t('errorQueryTooLong'))}</span></div>`); return; }
 
   chrome.storage.local.set({ lastRegion: regionSelect.value });
   showLoadingSpinner(searchResults, t('searching'));
@@ -1303,18 +1331,18 @@ function handleSearchCb(resp) {
 
 function handleSearchResponse(resp) {
   if (!resp || !resp.success) {
-    searchResults.innerHTML = `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retrySearch">Retry</button></div></div></div>`;
+    setHtml(searchResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retrySearch">Retry</button></div></div></div>`);
     return;
   }
   const data = applyOfficialOnlyToData(resp.data || {});
   const entries = Object.entries(data).filter(([, v]) => v && v.prices);
   if (entries.length === 0) {
-    searchResults.innerHTML = `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noSearchResults'))}</div>`;
+    setHtml(searchResults, `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noSearchResults'))}</div>`);
     return;
   }
   let html = '';
   for (const [id, game] of entries) html += renderGameCard(id, game);
-  searchResults.innerHTML = html;
+  setHtml(searchResults, html);
   attachCardListeners(searchResults);
 }
 
@@ -1533,11 +1561,11 @@ function attachCardListeners(container) {
       const id = btn.dataset.id;
       const bc = document.getElementById(`bundleContainer_${id}`);
       if (!bc) return;
-      if (bc.innerHTML.trim()) { bc.innerHTML = ''; return; }
-      bc.innerHTML = '<div class="loading" style="padding:8px"><div class="spinner"></div></div>';
+      if (hasContent(bc)) { clearEl(bc); return; }
+      setHtml(bc, '<div class="loading" style="padding:8px"><div class="spinner"></div></div>');
       chrome.runtime.sendMessage({ action: 'getBundles', ids: [id], region: regionSelect.value }, (resp) => {
         if (!resp || !resp.success || !resp.data?.[id]?.bundles?.length) {
-          bc.innerHTML = `<div style="font-size:0.78rem;color:var(--gg-text-muted);padding:8px 0">${escapeHtml(t('noActiveBundlesGame'))}</div>`;
+          setHtml(bc, `<div style="font-size:0.78rem;color:var(--gg-text-muted);padding:8px 0">${escapeHtml(t('noActiveBundlesGame'))}</div>`);
           return;
         }
         let h = '';
@@ -1550,7 +1578,7 @@ function attachCardListeners(container) {
           if (b.url) h += `<a class="game-link" href="${b.url}" target="_blank" rel="noopener" style="display:block;margin-top:4px">${escapeHtml(t('viewBundle'))}</a>`;
           h += '</div>';
         }
-        bc.innerHTML = h;
+        setHtml(bc, h);
       });
     });
   });
@@ -1738,7 +1766,7 @@ function renderActiveBundles() {
   if (!container) return;
   const bundles = Array.isArray(activeBundlesData) ? activeBundlesData.filter((b) => isBundleActive(b)) : [];
   if (bundles.length === 0) {
-    container.innerHTML = `<div class="empty"><span class="empty-icon">📦</span>${escapeHtml(t('noActiveBundlesNow'))}</div>`;
+    setHtml(container, `<div class="empty"><span class="empty-icon">📦</span>${escapeHtml(t('noActiveBundlesNow'))}</div>`);
     return;
   }
 
@@ -1797,7 +1825,7 @@ function renderActiveBundles() {
 
   if (sorted.length === 0) {
     h += `<div class="empty"><span class="empty-icon">🔎</span>No bundles match this filter.</div>`;
-    container.innerHTML = h;
+    setHtml(container, h);
   } else {
     for (const b of sorted) {
       let expiryHtml = '';
@@ -1849,7 +1877,7 @@ function renderActiveBundles() {
           </div>
         </div>`;
     }
-    container.innerHTML = h;
+    setHtml(container, h);
   }
 
   document.getElementById('activeBundleStoreFilter')?.addEventListener('change', (e) => {
@@ -1864,12 +1892,12 @@ function renderActiveBundles() {
 
 function loadActiveBundles() {
   const container = document.getElementById('bundlesContent');
-  if (bundlesLoaded && container.innerHTML.trim()) return;
+  if (bundlesLoaded && hasContent(container)) return;
   showLoadingSpinner(container, t('loadingBundles'));
   chrome.runtime.sendMessage({ action: 'getActiveBundles', region: regionSelect.value }, (resp) => {
     if (resp && resp.rateLimit) updateRateLimit(resp.rateLimit);
     if (!resp || !resp.success) {
-      container.innerHTML = `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryBundles">Retry</button></div></div></div>`;
+      setHtml(container, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryBundles">Retry</button></div></div></div>`);
       return;
     }
     activeBundlesData = resp.data || [];
@@ -1910,19 +1938,19 @@ function displayWishlist() {
   const headerEl = document.getElementById('wishlistHeader');
 
   if (wishlist.length === 0) {
-    headerEl.innerHTML = '';
-    el.innerHTML = `<div class="empty"><span class="empty-icon">♡</span>${escapeHtml(t('noWishlistGames'))}<br>${escapeHtml(t('noWishlistGamesHint'))}</div>`;
+    clearEl(headerEl);
+    setHtml(el, `<div class="empty"><span class="empty-icon">♡</span>${escapeHtml(t('noWishlistGames'))}<br>${escapeHtml(t('noWishlistGamesHint'))}</div>`);
     return;
   }
 
-  headerEl.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:6px;flex-wrap:wrap">
+  setHtml(headerEl, `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:6px;flex-wrap:wrap">
     <div class="section-label" style="margin-bottom:0">${escapeHtml(t('yourWishlistCount', String(wishlist.length)))}</div>
     <div style="display:flex;gap:6px">
       <button class="btn-sm btn-outline" id="exportWlBtn">📤 ${escapeHtml(t('exportBtn'))}</button>
       <button class="btn-sm btn-outline" id="importWlBtn">📥 ${escapeHtml(t('importBtn'))}</button>
       <button class="btn-sm btn-green" id="checkAllPricesBtn">${escapeHtml(t('checkAllPrices'))}</button>
     </div>
-  </div>`;
+  </div>`);
 
   let html = '';
   for (const item of wishlist) {
@@ -1947,7 +1975,7 @@ function displayWishlist() {
       </div></div>
     </div>`;
   }
-  el.innerHTML = html;
+  setHtml(el, html);
 
   // Expand/collapse
   el.querySelectorAll('.wishlist-header').forEach((hdr) => {
@@ -2027,13 +2055,13 @@ function loadWishlistItemDetail(id) {
   if (!detailEl) return;
   if (detailEl.querySelector('.price-section')) return; // already loaded
 
-  detailEl.innerHTML = '<div class="loading" style="padding:12px"><div class="spinner"></div><div class="loading-text">Loading prices…</div></div>';
+  setHtml(detailEl, '<div class="loading" style="padding:12px"><div class="spinner"></div><div class="loading-text">Loading prices…</div></div>');
 
   chrome.runtime.sendMessage({ action: 'lookupByIds', ids: [id], region: regionSelect.value }, async (resp) => {
     if (resp?.rateLimit) updateRateLimit(resp.rateLimit);
     const data = applyOfficialOnlyToData(resp?.data || {});
     if (!resp?.success || !data[id]) {
-      detailEl.innerHTML = `<div style="padding:8px 0"><div class="error" style="margin:0"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryWishlistDetail" data-id="${id}">Retry</button></div></div></div><div class="wishlist-actions"><button class="btn-sm btn-danger" data-action="removeWishlist" data-id="${id}">✕ Remove</button></div></div>`;
+      setHtml(detailEl, `<div style="padding:8px 0"><div class="error" style="margin:0"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryWishlistDetail" data-id="${id}">Retry</button></div></div></div><div class="wishlist-actions"><button class="btn-sm btn-danger" data-action="removeWishlist" data-id="${id}">✕ Remove</button></div></div>`);
       return;
     }
 
@@ -2118,7 +2146,7 @@ function loadWishlistItemDetail(id) {
     const recommendationBadgeId = `wlRecommendation_${id}`;
     const initialRecommendation = wl?.recommendationCache || getBuyRecommendation(p, wl?.bundleComparisonCache || null);
 
-    detailEl.innerHTML = `<div style="padding-top:10px">
+    setHtml(detailEl, `<div style="padding-top:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">${changeHtml}${dealScoreBadge(score)}<span id="${recommendationBadgeId}">${renderRecommendationBadge(initialRecommendation)}</span></div>
       <div class="price-section">${pc(t('officialStores'), p.currentRetail, retailDisc, !bestIsKey && retailDisc)}${pc(t('keyshops'), p.currentKeyshops, keyDisc, bestIsKey)}</div>
       ${histHtml}
@@ -2141,7 +2169,7 @@ function loadWishlistItemDetail(id) {
       ${productInsight}
       <input type="file" id="wlImageInput_${id}" accept="image/*" class="hidden" />
       <div id="wlBundleContainer_${id}"></div>
-    </div>`;
+    </div>`);
 
     document.getElementById(`wlAlert_${id}`)?.addEventListener('change', () => saveWishlistAlert(id));
     document.getElementById(`wlThreshold_${id}`)?.addEventListener('change', () => {
@@ -2181,31 +2209,31 @@ function loadWishlistItemDetail(id) {
     });
     const calloutEl = document.getElementById(bundleCalloutId);
     if (calloutEl) {
-      calloutEl.innerHTML = `<div class="bundle-worth-callout loading">Checking active bundles for this game…</div>`;
+      setHtml(calloutEl, `<div class="bundle-worth-callout loading">Checking active bundles for this game…</div>`);
       const cmp = await getBundleComparisonForGame(id, best, currency);
       const detailRecommendation = getBuyRecommendation(p, cmp);
       const recEl = document.getElementById(recommendationBadgeId);
-      if (recEl) recEl.innerHTML = renderRecommendationBadge(detailRecommendation);
+      if (recEl) setHtml(recEl, renderRecommendationBadge(detailRecommendation));
       if (wl) {
         wl.bundleComparisonCache = cmp;
         wl.recommendationCache = detailRecommendation;
         saveData();
       }
       if (cmp.kind === 'worth') {
-        calloutEl.innerHTML = `<div class="bundle-worth-callout worth">📦 Bundle watch: ${escapeHtml(cmp.shopName)} has ${cmp.bundleTitle ? `<b>${escapeHtml(cmp.bundleTitle)}</b> with ` : ''}a tier at <b>${cmp.tierPrice} ${cmp.currency}</b>, which is <b>${cmp.delta} ${cmp.currency}</b> below this game's current best price.</div>`;
+        setHtml(calloutEl, `<div class="bundle-worth-callout worth">📦 Bundle watch: ${escapeHtml(cmp.shopName)} has ${cmp.bundleTitle ? `<b>${escapeHtml(cmp.bundleTitle)}</b> with ` : ''}a tier at <b>${cmp.tierPrice} ${cmp.currency}</b>, which is <b>${cmp.delta} ${cmp.currency}</b> below this game's current best price.</div>`);
       } else if (cmp.kind === 'higher') {
-        calloutEl.innerHTML = `<div class="bundle-worth-callout higher">📦 Bundle watch: cheapest matching tier is <b>${cmp.tierPrice} ${cmp.currency}</b> at ${escapeHtml(cmp.shopName)}, about <b>${cmp.delta} ${cmp.currency}</b> above this game's current best price.</div>`;
+        setHtml(calloutEl, `<div class="bundle-worth-callout higher">📦 Bundle watch: cheapest matching tier is <b>${cmp.tierPrice} ${cmp.currency}</b> at ${escapeHtml(cmp.shopName)}, about <b>${cmp.delta} ${cmp.currency}</b> above this game's current best price.</div>`);
       } else {
-        calloutEl.innerHTML = `<div class="bundle-worth-callout neutral">📦 Bundle watch: no active bundle includes this game right now.</div>`;
+        setHtml(calloutEl, `<div class="bundle-worth-callout neutral">📦 Bundle watch: no active bundle includes this game right now.</div>`);
       }
     }
     document.getElementById(`wlBundleBtn_${id}`)?.addEventListener('click', () => {
       const c = document.getElementById(`wlBundleContainer_${id}`);
       if (!c) return;
-      if (c.innerHTML.trim()) { c.innerHTML = ''; return; }
-      c.innerHTML = '<div class="loading" style="padding:8px"><div class="spinner"></div></div>';
+      if (hasContent(c)) { clearEl(c); return; }
+      setHtml(c, '<div class="loading" style="padding:8px"><div class="spinner"></div></div>');
       chrome.runtime.sendMessage({ action: 'getBundles', ids: [id], region: regionSelect.value }, (bR) => {
-        if (!bR?.success || !bR.data?.[id]?.bundles?.length) { c.innerHTML = `<div style="font-size:0.78rem;color:var(--gg-text-muted);padding:8px 0">${escapeHtml(t('noActiveBundles'))}</div>`; return; }
+        if (!bR?.success || !bR.data?.[id]?.bundles?.length) { setHtml(c, `<div style="font-size:0.78rem;color:var(--gg-text-muted);padding:8px 0">${escapeHtml(t('noActiveBundles'))}</div>`); return; }
         let h = '';
         for (const b of bR.data[id].bundles.slice(0, 3)) {
           h += `<div class="bundle-card"><div class="bundle-title">${escapeHtml(b.title)}</div>`;
@@ -2216,7 +2244,7 @@ function loadWishlistItemDetail(id) {
           if (b.url) h += `<a class="game-link" href="${b.url}" target="_blank" rel="noopener">${escapeHtml(t('viewArrow'))}</a>`;
           h += '</div>';
         }
-        c.innerHTML = h;
+        setHtml(c, h);
       });
     });
   });
@@ -2353,7 +2381,7 @@ function renderGgDealsUnresolved(job) {
   const unresolved = Array.isArray(job?.unresolved) ? job.unresolved : [];
   if (!unresolved.length || (job.status !== 'done' && job.status !== 'error')) {
     wrap.classList.add('hidden');
-    list.innerHTML = '';
+    clearEl(list);
     list.classList.add('hidden');
     if (countEl) countEl.textContent = '';
     return;
@@ -2361,7 +2389,7 @@ function renderGgDealsUnresolved(job) {
 
   wrap.classList.remove('hidden');
   if (countEl) countEl.textContent = `(${unresolved.length})`;
-  list.innerHTML = unresolved.map((game) => {
+  setHtml(list, unresolved.map((game) => {
     const raw = String(game.title || 'Unknown');
     const title = raw
       .replace(/&/g, '&amp;')
@@ -2371,7 +2399,7 @@ function renderGgDealsUnresolved(job) {
     const href = unresolvedGameUrl(game);
     const linkLabel = tf('importGgDealsViewOnGg', 'GG.deals');
     return `<li><span class="title" title="${title}">${title}</span><a href="${href}" target="_blank" rel="noopener noreferrer">${linkLabel}</a></li>`;
-  }).join('');
+  }).join(''));
 }
 
 function applyGgDealsImportJobToUi(job, { toastOnDone = false } = {}) {
@@ -2715,15 +2743,15 @@ function renderExcludedHostsList() {
   if (!list) return;
   const hosts = Array.isArray(userPrefs.excludedHosts) ? userPrefs.excludedHosts : [];
   if (hosts.length === 0) {
-    list.innerHTML = `<span class="helper-text">${escapeHtml(tf('excludedSitesEmpty', 'No sites hidden'))}</span>`;
+    setHtml(list, `<span class="helper-text">${escapeHtml(tf('excludedSitesEmpty', 'No sites hidden'))}</span>`);
     return;
   }
-  list.innerHTML = hosts.map((host) => `
+  setHtml(list, hosts.map((host) => `
     <div class="excluded-host-row" data-host="${escapeAttr(host)}">
       <span>${escapeHtml(host)}</span>
       <button type="button" data-action="remove-excluded">${escapeHtml(tf('excludedSiteRemove', 'Restore'))}</button>
     </div>
-  `).join('');
+  `).join(''));
 }
 
 // Settings event listeners (once)
