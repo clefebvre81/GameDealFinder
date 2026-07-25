@@ -1751,8 +1751,51 @@ body.theme-oled .error {
   color: var(--gg-orange);
 }
 
+.rate-limit.critical {
+  color: #dc2626;
+}
+
+.rate-limit-cta {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .rate-limit.ok {
   color: var(--gg-green);
+}
+
+.degraded-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--gg-orange) 40%, var(--gg-border));
+  background: color-mix(in srgb, var(--gg-orange) 12%, var(--gg-surface-bg));
+  color: var(--gg-text);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.cache-age-tag {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gg-text-muted) 18%, transparent);
+  color: var(--gg-text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .hidden {

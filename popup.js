@@ -357,21 +357,12 @@ function showLoadingSpinner(container, text = null) {
 
 // ── Rate limit ───────────────────────────────────────────────────────────────
 
+let hasOwnApiKey = false;
+
 function updateRateLimit(info) {
   if (!rateLimitEl || !info) return;
   const r = info.remaining;
   if (r === undefined || r === null) return;
-
-  let resetText = '';
-  if (info.reset) {
-    const resetTime = info.reset * 1000;
-    const now = Date.now();
-    const diffMs = resetTime - now;
-    if (diffMs > 0) {
-      const mins = Math.ceil(diffMs / 60000);
-      resetText = mins <= 1 ? '' : '';
-    }
-  }
 
   let apiText;
   if (info.reset) {
@@ -387,9 +378,25 @@ function updateRateLimit(info) {
     apiText = t('apiCallsLeft', String(r));
   }
 
-  if (r < 10) {
+  const settingsCta = `<button type="button" class="rate-limit-cta" data-action="openSettings">${escapeHtml(t('addKey'))}</button>`;
+  const freeKeyCta = `<a class="rate-limit-cta" href="https://gg.deals/settings/" target="_blank" rel="noopener">${escapeHtml(t('getFreeKey') || 'Get free key')}</a>`;
+
+  // Stronger nudge when using the shared key and quota is low
+  if (!hasOwnApiKey && r <= 50) {
+    rateLimitEl.className = 'rate-limit low critical';
+    const nudge = r <= 0
+      ? (t('sharedKeyEmptyNudge') || 'Shared key empty — add your free API key')
+      : (t('sharedKeyLowNudge') || 'Shared key almost empty');
+    setHtml(rateLimitEl, `⚠️ ${escapeHtml(nudge)} · ${escapeHtml(apiText)}. ${freeKeyCta} ${settingsCta}`);
+    return;
+  }
+
+  if (r <= 0) {
     rateLimitEl.className = 'rate-limit low';
-    setHtml(rateLimitEl, `⚠️ ${escapeHtml(apiText)}. <a href="#" onclick="switchTab('settings')" style="color:inherit;text-decoration:underline">${escapeHtml(t('addKey'))}</a>`);
+    setHtml(rateLimitEl, `⚠️ ${escapeHtml(apiText)}. ${settingsCta}`);
+  } else if (r < 10) {
+    rateLimitEl.className = 'rate-limit low';
+    setHtml(rateLimitEl, `⚠️ ${escapeHtml(apiText)}. ${settingsCta}`);
   } else if (r < 100) {
     rateLimitEl.className = 'rate-limit warn';
     rateLimitEl.textContent = apiText;
@@ -397,6 +404,34 @@ function updateRateLimit(info) {
     rateLimitEl.className = 'rate-limit ok';
     rateLimitEl.textContent = apiText;
   }
+}
+
+function formatCacheAgeLabel(cacheMeta) {
+  if (!cacheMeta || !cacheMeta.stale) return '';
+  const ageMs = cacheMeta.ageMs != null
+    ? cacheMeta.ageMs
+    : (cacheMeta.cachedAt ? Math.max(0, Date.now() - cacheMeta.cachedAt) : null);
+  if (ageMs == null) return t('cachedLabel') || 'Cached';
+  const mins = Math.max(1, Math.round(ageMs / 60000));
+  if (mins < 60) return t('cachedMinsAgo', String(mins)) || `Cached · ${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return t('cachedHoursAgo', String(hours)) || `Cached · ${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return t('cachedDaysAgo', String(days)) || `Cached · ${days}d ago`;
+}
+
+function degradedBannerHtml(resp) {
+  if (!resp || !(resp.degraded || resp.rateLimited || resp.errorCode === 'RATE_LIMIT' || resp.error === 'RATE_LIMIT')) {
+    return '';
+  }
+  const msg = resp.rateLimited || resp.errorCode === 'RATE_LIMIT' || resp.error === 'RATE_LIMIT'
+    ? (t('degradedRateLimited') || 'Rate limited — showing cached prices. Add a free API key for live data.')
+    : (t('degradedCached') || 'Showing cached prices — live API unavailable.');
+  return `<div class="degraded-banner" role="status">
+    <span>${escapeHtml(msg)}</span>
+    <button type="button" class="btn-sm btn-outline" data-action="openSettings">${escapeHtml(t('addKey'))}</button>
+    <a class="btn-sm btn-green" href="https://gg.deals/settings/" target="_blank" rel="noopener">${escapeHtml(t('getFreeKey') || 'Get free key')}</a>
+  </div>`;
 }
 
 // ── Theme System ─────────────────────────────────────────────────────────────
@@ -454,6 +489,7 @@ chrome.storage.local.get(
     if (localResult.imageOverrides && typeof localResult.imageOverrides === 'object') imageOverrides = localResult.imageOverrides;
     if (localResult.notificationSettings) notificationSettings = localResult.notificationSettings;
     if (localResult.apiKey) document.getElementById('apiKeyInput').value = localResult.apiKey;
+    hasOwnApiKey = !!(localResult.apiKey && String(localResult.apiKey).trim());
 
     // Merge synced cross-device data (wishlist, prefs, notifications, apiKey)
     try {
@@ -480,6 +516,7 @@ chrome.storage.local.get(
 
         if (syncResult.notificationSettings) notificationSettings = { ...notificationSettings, ...syncResult.notificationSettings };
         if (syncResult.apiKey) document.getElementById('apiKeyInput').value = syncResult.apiKey;
+        if (syncResult.apiKey) hasOwnApiKey = !!(syncResult.apiKey && String(syncResult.apiKey).trim());
 
         finishInit(localResult);
       });
@@ -733,7 +770,7 @@ function loadDetectedGames() {
           (priceResp) => {
             if (priceResp && priceResp.rateLimit) updateRateLimit(priceResp.rateLimit);
             if (!priceResp || !priceResp.success) {
-              setHtml(detectedResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`);
+              setHtml(detectedResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.errorCode || priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`);
               return;
             }
             const data = applyOfficialOnlyToData(priceResp.data);
@@ -751,7 +788,7 @@ function loadDetectedGames() {
             const renderDetected = (entries) => {
               const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab;
               if (activeTab === 'dashboard') switchTab('detected');
-              renderDetectedResults(entries, isWishlist, storeName);
+              renderDetectedResults(entries, isWishlist, storeName, priceResp);
             };
 
             // On GG.deals pages, prefer the page hero image for the first detected game.
@@ -863,9 +900,14 @@ function formatStoreName(store) {
 
 function friendlyError(err) {
   if (!err) return escapeHtml(t('errorGeneric'));
-  const lower = err.toLowerCase();
+  const raw = String(err);
+  const lower = raw.toLowerCase();
+  if (raw === 'RATE_LIMIT' || lower.includes('rate_limit') || lower.includes('rate limit') || lower.includes('429')) {
+    return `<strong>${escapeHtml(t('errorRateLimit'))}</strong><br><br>${escapeHtml(t('errorRateLimitDesc'))}<br><br>
+      <button type="button" class="btn-sm btn-outline" data-action="openSettings">${escapeHtml(t('addKey'))}</button>
+      <a class="btn-sm btn-green" href="https://gg.deals/settings/" target="_blank" rel="noopener" style="margin-left:6px">${escapeHtml(t('getFreeKey') || 'Get free key')}</a>`;
+  }
   if (lower.includes('timeout') || lower.includes('timed out')) return escapeHtml(t('errorTimeout'));
-  if (lower.includes('rate limit') || lower.includes('429')) return `<strong>${escapeHtml(t('errorRateLimit'))}</strong><br><br>${escapeHtml(t('errorRateLimitDesc'))}`;
   if (lower.includes('authentication') || lower.includes('401')) return escapeHtml(t('errorInvalidKey'));
   if (lower.includes('not found') || lower.includes('404')) return escapeHtml(t('errorNotFound'));
   return escapeHtml(t('errorGeneric'));
@@ -938,13 +980,13 @@ function renderLargeWishlistImport(allIds, storeName, tabId) {
         (priceResp) => {
           if (priceResp && priceResp.rateLimit) updateRateLimit(priceResp.rateLimit);
           if (!priceResp || !priceResp.success) {
-            setHtml(detectedResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`);
+            setHtml(detectedResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(priceResp?.errorCode || priceResp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryDetected">Retry</button></div></div></div>`);
             return;
           }
           const data = applyOfficialOnlyToData(priceResp.data);
           const validEntries = Object.entries(data).filter(([, v]) => v && v.prices);
           if (validEntries.length === 0) {
-            setHtml(detectedResults, `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noPricingDataShort'))}</div>`);
+            setHtml(detectedResults, `${degradedBannerHtml(priceResp)}<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noPricingDataShort'))}</div>`);
             return;
           }
           // Update any imported items with real titles
@@ -967,14 +1009,14 @@ function renderLargeWishlistImport(allIds, storeName, tabId) {
           }
           saveData();
           scanBadge.textContent = validEntries.length !== 1 ? t('wishlistGamesCount', String(validEntries.length)) : t('wishlistGameCount', String(validEntries.length));
-          renderDetectedResults(validEntries, true, storeName);
+          renderDetectedResults(validEntries, true, storeName, priceResp);
         }
       );
     });
   }
 }
 
-function renderDetectedResults(validEntries, isWishlistPage, storeName) {
+function renderDetectedResults(validEntries, isWishlistPage, storeName, resp = null) {
   const headerTitle = isWishlistPage ? t('yourWishlist') : t('detectedOnPage');
 
   const notInWishlist = validEntries.filter(([id]) => !wishlist.some((w) => w.id === id));
@@ -984,7 +1026,7 @@ function renderDetectedResults(validEntries, isWishlistPage, storeName) {
       ? `<span style="font-size:0.75rem;color:var(--gg-text-muted)">${escapeHtml(t('allInWishlist'))}</span>`
       : '';
 
-  let html = `<div class="detected-header">
+  let html = `${degradedBannerHtml(resp)}<div class="detected-header">
     <h3>${escapeHtml(headerTitle)}</h3>
     <div style="display:flex;align-items:center;gap:8px">
       ${importBtnHtml}
@@ -1071,23 +1113,18 @@ function showDashboard() {
       </div>`);
     return;
   }
-  chrome.storage.local.get(['rateLimitInfo'], (stored) => {
-    const rl = stored.rateLimitInfo;
-    if (rl && rl.remaining !== undefined && rl.remaining <= 0) {
-      renderCachedDashboard(rl);
-      return;
-    }
-    loadDashboardData();
-  });
+  // Always load via background — it serves stale cache when quota is exhausted
+  loadDashboardData();
 }
 
-function renderCachedDashboard(rl) {
+function renderCachedDashboard(rl, resp = null) {
   // Use pricesCache instead of lastPrice
   const gamesWithPrices = wishlist.filter((w) => w.pricesCache != null);
   const dashboardEl = document.getElementById('dashboardResults');
+  const banner = degradedBannerHtml(resp || (rl && rl.remaining <= 0 ? { rateLimited: true, degraded: true } : null));
   
   if (gamesWithPrices.length === 0) {
-    let html = `<div class="dashboard-section">
+    let html = `${banner}<div class="dashboard-section">
       <div class="dashboard-section-header"><span class="dash-icon">📊</span> ${escapeHtml(t('trackedGames', String(wishlist.length)))}</div>`;
     for (const w of wishlist.slice(0, 12)) {
       html += `<div class="dashboard-mini-card" data-id="${escapeAttr(w.id)}">
@@ -1157,7 +1194,7 @@ function renderCachedDashboard(rl) {
   totalBest = totalBest.toFixed(2);
 
   // Build the Detailed Dashboard UI!
-  let html = `
+  let html = `${banner}
     <div style="background:var(--gg-surface-bg); padding:16px; border-radius:8px; margin-bottom:16px; border:1px solid var(--gg-border); text-align:center;">
        <div style="font-size:0.75rem; color:var(--gg-text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Total Wishlist Savings Available</div>
        <div style="font-size:1.8rem; font-weight:900; color:#4ade80;">$${savingsAmount} <span style="font-size:1rem; opacity:0.8;">(-${savingsPct}%)</span></div>
@@ -1241,16 +1278,30 @@ function loadDashboardData() {
   showLoadingSpinner(dashboardEl, t('loadingWishlist'));
   
   chrome.runtime.sendMessage({ action: 'lookupByIds', ids: idsToLoad, region: regionSelect.value }, (resp) => {
+    if (resp?.rateLimit) updateRateLimit(resp.rateLimit);
     if (!resp || !resp.success) {
-      renderCachedDashboard(null);
+      // Prefer typed rate-limit messaging; still show last known wishlist prices
+      renderCachedDashboard(resp?.rateLimit || null, resp);
       return;
     }
     const data = applyOfficialOnlyToData(resp.data);
     wishlist.forEach((w) => {
       if (data[w.id]) {
         w.pricesCache = data[w.id].prices;
+        w.cacheMeta = data[w.id]._ggCache || null;
       }
     });
+
+    const finish = () => {
+      saveData();
+      renderCachedDashboard(resp.rateLimit || null, resp);
+    };
+
+    // Skip bundle live fetches when rate-limited / degraded to avoid burning quota
+    if (resp.rateLimited || resp.degraded) {
+      finish();
+      return;
+    }
 
     chrome.runtime.sendMessage({ action: 'getBundles', ids: idsToLoad, region: regionSelect.value }, (bundleResp) => {
       const bundleData = bundleResp?.success ? (bundleResp.data || {}) : {};
@@ -1262,8 +1313,7 @@ function loadDashboardData() {
         w.bundleComparisonCache = analyzeBundleComparison(bundles, best, currency);
         w.recommendationCache = getBuyRecommendation(w.pricesCache, w.bundleComparisonCache);
       });
-      saveData();
-      renderCachedDashboard(null);
+      finish();
     });
   });
 }
@@ -1331,16 +1381,16 @@ function handleSearchCb(resp) {
 
 function handleSearchResponse(resp) {
   if (!resp || !resp.success) {
-    setHtml(searchResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retrySearch">Retry</button></div></div></div>`);
+    setHtml(searchResults, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.errorCode || resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retrySearch">Retry</button></div></div></div>`);
     return;
   }
   const data = applyOfficialOnlyToData(resp.data || {});
   const entries = Object.entries(data).filter(([, v]) => v && v.prices);
   if (entries.length === 0) {
-    setHtml(searchResults, `<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noSearchResults'))}</div>`);
+    setHtml(searchResults, `${degradedBannerHtml(resp)}<div class="empty"><span class="empty-icon">🔍</span>${escapeHtml(t('noSearchResults'))}</div>`);
     return;
   }
-  let html = '';
+  let html = degradedBannerHtml(resp);
   for (const [id, game] of entries) html += renderGameCard(id, game);
   setHtml(searchResults, html);
   attachCardListeners(searchResults);
@@ -1444,6 +1494,8 @@ function renderGameCard(id, game) {
   const isHistLow = (histRetail !== null && currentRetail !== null && currentRetail <= histRetail) ||
     (histKey !== null && currentKey !== null && currentKey <= histKey);
   const histLowTag = isHistLow ? `<div class="historical-low-tag">⭐ ${escapeHtml(t('atHistoricalLowTag'))}</div>` : '';
+  const cacheLabel = formatCacheAgeLabel(game._ggCache);
+  const cacheTag = cacheLabel ? `<div class="cache-age-tag" title="${escapeAttr(cacheLabel)}">${escapeHtml(cacheLabel)}</div>` : '';
   const chartHtml2 = renderTrendChart(game.prices);
 
   const history = priceHistory[id] || [];
@@ -1468,7 +1520,7 @@ function renderGameCard(id, game) {
           ${priceCol(t('officialStores'), p.currentRetail, retailDiscount, !bestDealIsKey && retailDiscount)}
           ${priceCol(t('keyshops'), p.currentKeyshops, keyDiscount, bestDealIsKey)}
         </div>
-        ${histHtml}${histLowTag}${chartHtml2}
+        ${histHtml}${histLowTag}${cacheTag}${chartHtml2}
       </div>
     </div>
     <div class="game-actions">
@@ -1897,7 +1949,7 @@ function loadActiveBundles() {
   chrome.runtime.sendMessage({ action: 'getActiveBundles', region: regionSelect.value }, (resp) => {
     if (resp && resp.rateLimit) updateRateLimit(resp.rateLimit);
     if (!resp || !resp.success) {
-      setHtml(container, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryBundles">Retry</button></div></div></div>`);
+      setHtml(container, `<div class="error"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.errorCode || resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryBundles">Retry</button></div></div></div>`);
       return;
     }
     activeBundlesData = resp.data || [];
@@ -2011,6 +2063,8 @@ function displayWishlist() {
           if (w) {
             w.lastPrice = best;
             w.lastCurrency = cur;
+            w.pricesCache = game.prices;
+            if (game._ggCache) w.cacheMeta = game._ggCache;
             // Update placeholder titles with real game names from GG.deals
             if (game.title && (w.title.startsWith('Steam App ') || w.title === 'Unknown')) {
               w.title = game.title;
@@ -2031,10 +2085,15 @@ function displayWishlist() {
           }
         }
         saveData();
-        showToast(titlesUpdated > 0 ? t('pricesUpdatedTitles', String(n), String(titlesUpdated)) : t('pricesUpdated', String(n)), 'success');
+        if (n === 0 && (resp.rateLimited || resp.degraded)) {
+          showToast(t('degradedRateLimited') || 'Rate limited — showing cached prices. Add a free API key.', 'error');
+        } else {
+          const base = titlesUpdated > 0 ? t('pricesUpdatedTitles', String(n), String(titlesUpdated)) : t('pricesUpdated', String(n));
+          showToast(resp.degraded || resp.rateLimited ? `${base} (${t('cachedLabel') || 'Cached'})` : base, resp.degraded ? 'info' : 'success');
+        }
         // Re-render the wishlist to show updated titles
         if (titlesUpdated > 0) displayWishlist();
-      } else showToast(t('failedCheckPrices'), 'error');
+      } else showToast(friendlyError(resp?.errorCode || resp?.error).replace(/<[^>]+>/g, ' ').trim() || t('failedCheckPrices'), 'error');
     });
   });
 
@@ -2060,12 +2119,26 @@ function loadWishlistItemDetail(id) {
   chrome.runtime.sendMessage({ action: 'lookupByIds', ids: [id], region: regionSelect.value }, async (resp) => {
     if (resp?.rateLimit) updateRateLimit(resp.rateLimit);
     const data = applyOfficialOnlyToData(resp?.data || {});
-    if (!resp?.success || !data[id]) {
-      setHtml(detailEl, `<div style="padding:8px 0"><div class="error" style="margin:0"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryWishlistDetail" data-id="${id}">Retry</button></div></div></div><div class="wishlist-actions"><button class="btn-sm btn-danger" data-action="removeWishlist" data-id="${id}">✕ Remove</button></div></div>`);
+    const wl = wishlist.find((w) => w.id === id);
+
+    // Fall back to last known wishlist prices when live/cache lookup fails
+    let game = data[id];
+    if ((!resp?.success || !game?.prices) && wl?.pricesCache) {
+      game = {
+        title: wl.title,
+        prices: wl.pricesCache,
+        url: wl.url || null,
+        _ggCache: wl.cacheMeta || { stale: true, cachedAt: null, ageMs: null },
+      };
+      resp = { ...(resp || {}), success: true, degraded: true, rateLimited: true };
+    }
+
+    if (!resp?.success || !game?.prices) {
+      setHtml(detailEl, `<div style="padding:8px 0"><div class="error" style="margin:0"><span class="error-icon">⚠️</span><div><div>${friendlyError(resp?.errorCode || resp?.error)}</div><div class="error-actions"><button class="btn-sm btn-outline" data-action="retryWishlistDetail" data-id="${id}">Retry</button></div></div></div><div class="wishlist-actions"><button class="btn-sm btn-danger" data-action="removeWishlist" data-id="${id}">✕ Remove</button></div></div>`);
       return;
     }
 
-    const game = data[id], p = game.prices, currency = p.currency || 'USD';
+    const p = game.prices, currency = p.currency || 'USD';
     const currentRetail = p.currentRetail ? parseFloat(p.currentRetail) : null;
     const currentKey = p.currentKeyshops ? parseFloat(p.currentKeyshops) : null;
     const histRetail = p.historicalRetail ? parseFloat(p.historicalRetail) : null;
@@ -2078,36 +2151,38 @@ function loadWishlistItemDetail(id) {
     const productMeta = getSteamProductMeta(id);
     const productInsight = renderSteamProductInsight(id, game, best, currency);
 
-    const wl = wishlist.find((w) => w.id === id);
+    const wlItem = wl;
     let thresholdNotice = '';
-    if (wl) {
-      wl.lastPrice = best;
-      wl.lastCurrency = currency;
-      if (game.title && (wl.title.startsWith('Steam App ') || wl.title === 'Unknown')) {
-        wl.title = game.title;
+    if (wlItem) {
+      wlItem.lastPrice = best;
+      wlItem.lastCurrency = currency;
+      wlItem.pricesCache = p;
+      if (game._ggCache) wlItem.cacheMeta = game._ggCache;
+      if (game.title && (wlItem.title.startsWith('Steam App ') || wlItem.title === 'Unknown')) {
+        wlItem.title = game.title;
         // Update the title in the header too
         const titleEl = document.querySelector(`.wishlist-item[data-wl-id="${id}"] .wishlist-title`);
         if (titleEl) titleEl.textContent = game.title;
       }
-      if (wl.addedPrice === null && best !== null) {
-        wl.addedPrice = best;
+      if (wlItem.addedPrice === null && best !== null) {
+        wlItem.addedPrice = best;
       }
       // Auto-sync threshold to the historical low (in the current region's
       // currency) unless the user has manually customized it.
-      if (!wl.alertThresholdCustom) {
+      if (!wlItem.alertThresholdCustom) {
         const autoThreshold = histLow ?? best;
         if (autoThreshold !== null && autoThreshold !== undefined) {
-          wl.alertThreshold = autoThreshold;
-          wl.alertThresholdCurrency = currency;
+          wlItem.alertThreshold = autoThreshold;
+          wlItem.alertThresholdCurrency = currency;
         }
       } else {
-        const fromCurrency = String(wl.alertThresholdCurrency || wl.lastCurrency || '').toUpperCase();
+        const fromCurrency = String(wlItem.alertThresholdCurrency || wlItem.lastCurrency || '').toUpperCase();
         const toCurrency = String(currency || '').toUpperCase();
-        if (wl.alertThreshold != null && fromCurrency && toCurrency && fromCurrency !== toCurrency) {
+        if (wlItem.alertThreshold != null && fromCurrency && toCurrency && fromCurrency !== toCurrency) {
           try {
-            const converted = await convertCurrencyAmount(wl.alertThreshold, fromCurrency, toCurrency);
-            wl.alertThreshold = converted;
-            wl.alertThresholdCurrency = toCurrency;
+            const converted = await convertCurrencyAmount(wlItem.alertThreshold, fromCurrency, toCurrency);
+            wlItem.alertThreshold = converted;
+            wlItem.alertThresholdCurrency = toCurrency;
             thresholdNotice = `Custom alert converted from ${fromCurrency} to ${toCurrency} using latest exchange rates.`;
           } catch {
             thresholdNotice = `Custom alert is set in ${fromCurrency}; current prices are in ${toCurrency}. Conversion failed, please review manually.`;
@@ -2118,8 +2193,8 @@ function loadWishlistItemDetail(id) {
     }
 
     let changeHtml = '';
-    if (wl?.addedPrice != null && best !== null) {
-      const diff = best - wl.addedPrice;
+    if (wlItem?.addedPrice != null && best !== null) {
+      const diff = best - wlItem.addedPrice;
       if (diff < -0.01) changeHtml = `<span class="wishlist-price-change down">▼ ${escapeHtml(t('lowerBy', Math.abs(diff).toFixed(2)))}</span>`;
       else if (diff > 0.01) changeHtml = `<span class="wishlist-price-change up">▲ ${escapeHtml(t('higherBy', diff.toFixed(2)))}</span>`;
       else changeHtml = `<span class="wishlist-price-change same">— ${escapeHtml(t('samePrice'))}</span>`;
@@ -2141,18 +2216,22 @@ function loadWishlistItemDetail(id) {
     }
 
     const score = calculateDealScore(p, false);
-    const threshold = wl?.alertThreshold ?? histLow ?? best ?? '';
+    const threshold = wlItem?.alertThreshold ?? histLow ?? best ?? '';
     const bundleCalloutId = `wlBundleCallout_${id}`;
     const recommendationBadgeId = `wlRecommendation_${id}`;
-    const initialRecommendation = wl?.recommendationCache || getBuyRecommendation(p, wl?.bundleComparisonCache || null);
+    const initialRecommendation = wlItem?.recommendationCache || getBuyRecommendation(p, wlItem?.bundleComparisonCache || null);
+    const cacheLabel = formatCacheAgeLabel(game._ggCache);
+    const cacheTag = cacheLabel ? `<div class="cache-age-tag">${escapeHtml(cacheLabel)}</div>` : '';
+    const degradedTop = degradedBannerHtml(resp);
 
     setHtml(detailEl, `<div style="padding-top:10px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">${changeHtml}${dealScoreBadge(score)}<span id="${recommendationBadgeId}">${renderRecommendationBadge(initialRecommendation)}</span></div>
+      ${degradedTop}
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">${changeHtml}${dealScoreBadge(score)}<span id="${recommendationBadgeId}">${renderRecommendationBadge(initialRecommendation)}</span>${cacheTag}</div>
       <div class="price-section">${pc(t('officialStores'), p.currentRetail, retailDisc, !bestIsKey && retailDisc)}${pc(t('keyshops'), p.currentKeyshops, keyDisc, bestIsKey)}</div>
       ${histHtml}
       <div id="${bundleCalloutId}"></div>
       <div class="wishlist-alert-row">
-        <input type="checkbox" class="toggle-switch" id="wlAlert_${id}" ${wl?.alertEnabled ? 'checked' : ''} />
+        <input type="checkbox" class="toggle-switch" id="wlAlert_${id}" ${wlItem?.alertEnabled ? 'checked' : ''} />
         <label for="wlAlert_${id}" style="cursor:pointer">${escapeHtml(t('alertBelow'))}</label>
         <input type="number" id="wlThreshold_${id}" value="${threshold}" step="0.01" min="0" placeholder="Price" />
         <span id="wlCurrency_${id}" style="color:var(--gg-text-muted);font-size:0.72rem">${currency}</span>
@@ -2867,9 +2946,13 @@ function wireSettings() {
   // API Key
   document.getElementById('apiKeyInput').addEventListener('change', (e) => {
     const key = e.target.value.trim();
+    hasOwnApiKey = !!key;
     chrome.storage.local.set({ apiKey: key || null });
     if (userPrefs.syncEnabled) { try { chrome.storage.sync.set({ apiKey: key || null }).catch(() => {}); } catch { } }
     showToast(key ? t('apiKeySaved') : t('usingDefaultKey'), 'success');
+    chrome.storage.local.get(['rateLimitInfo'], (stored) => {
+      if (stored.rateLimitInfo) updateRateLimit(stored.rateLimitInfo);
+    });
   });
 
   // Sync toggle
@@ -2928,11 +3011,35 @@ document.body.addEventListener('click', (e) => {
     case 'retryBundles': bundlesLoaded = false; loadActiveBundles(); break;
     case 'retryWishlistDetail': loadWishlistItemDetail(id); break;
     case 'removeWishlist': removeWishlistItem(id); break;
+    case 'openSettings': switchTab('settings'); break;
     case 'searchGame':
       gameIdInput.value = id;
       switchTab('search');
       performSearch();
       break;
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.action !== 'quotaReset') return;
+  chrome.storage.local.get(['rateLimitInfo'], (stored) => {
+    if (stored.rateLimitInfo) updateRateLimit(stored.rateLimitInfo);
+    else if (rateLimitEl) {
+      rateLimitEl.className = 'rate-limit ok';
+      rateLimitEl.textContent = t('apiQuotaReset') || 'API quota reset — refreshing…';
+    }
+  });
+  if (document.getElementById('dashboardTab')?.classList.contains('active')) showDashboard();
+  if (document.getElementById('searchTab')?.classList.contains('active') && gameIdInput?.value?.trim()) performSearch();
+  if (document.getElementById('wishlistTab')?.classList.contains('active')) {
+    document.querySelectorAll('.wishlist-item.expanded').forEach((el) => {
+      const wid = el.dataset.wlId;
+      const detail = document.getElementById(`wlDetail_${wid}`);
+      if (detail) {
+        detail.querySelector('.price-section')?.remove();
+        loadWishlistItemDetail(wid);
+      }
+    });
   }
 });
 

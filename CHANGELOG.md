@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.8.4] - 2026-07-25
+
+### Added
+
+- **Stale-while-revalidate** — When the API is rate-limited or down, serve last cached prices (up to 7 days) with a “Cached · 2h ago” label across search, overlay, wishlist, and dashboard.
+- **Degraded price bar** — Overlay never fails silently: shows last known Official / Keyshop / Best plus a “Rate limited — add free API key” CTA.
+- **Quota gate** — When remaining calls ≤ 0, skip live fetches for uncached IDs and return cache-only everywhere (not just the dashboard).
+- **Typed `RATE_LIMIT` errors** — Retry screens always surface the Settings / free API-key message instead of a generic failure.
+- **Auto-retry on quota reset** — Schedules a refresh at `x-ratelimit-reset` for open pages and wishlist alerts.
+- **Stronger shared-key nudge** — When the shared key is nearly empty, pushes Settings harder with a one-tap “Get free key” link.
+
 ## [2.8.3] - 2026-07-24
 
 ### Fixed

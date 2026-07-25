@@ -1,0 +1,6 @@
+• When the API is rate-limited, show cached prices with a “Cached · … ago” label instead of a blank screen
+• Price bar keeps last known Official / Keyshop / Best and adds a clear “add free API key” CTA
+• Stops burning quota when remaining calls hit 0 (cache-only for uncached games)
+• Clearer rate-limit errors on Retry screens with Settings / Get free key
+• Auto-refreshes open pages and wishlist alerts when your quota resets
+• Stronger nudge to add your own free GG.deals API key when the shared key is nearly empty

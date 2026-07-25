@@ -1,5 +1,6 @@
 const DEFAULT_API_KEY = 'sqz5OjdsyxNW2e0i3aF5BA0p5rpd0fHU';
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes (fresh)
+const STALE_MAX_MS = 7 * 24 * 60 * 60 * 1000; // serve stale up to 7 days
 const PRICES_ENDPOINTS = {
   app: 'https://api.gg.deals/v1/prices/by-steam-app-id/',
   sub: 'https://api.gg.deals/v1/prices/by-steam-sub-id/',
@@ -17,6 +18,15 @@ const FX_API_BASE = 'https://api.frankfurter.app';
 const MAX_RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 15000;
 const FX_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const RATE_LIMIT_ERROR = 'RATE_LIMIT';
+
+class RateLimitError extends Error {
+  constructor(message) {
+    super(message || RATE_LIMIT_ERROR);
+    this.name = 'RateLimitError';
+    this.code = RATE_LIMIT_ERROR;
+  }
+}
 
 // In-memory caches
 let priceCache = {};
@@ -94,7 +104,8 @@ chrome.storage.local.get(['priceCache'], (result) => {
   if (result.priceCache) {
     const now = Date.now();
     for (const [key, entry] of Object.entries(result.priceCache)) {
-      if (now - entry.timestamp < CACHE_TTL_MS) {
+      // Keep fresh + stale entries so we can serve them when the API is exhausted
+      if (entry?.data && now - entry.timestamp < STALE_MAX_MS) {
         priceCache[key] = entry;
       }
     }
@@ -105,6 +116,7 @@ chrome.storage.local.get(['priceCache'], (result) => {
 
 async function fetchWithRetry(url, retries = MAX_RETRIES) {
   let lastError = null;
+  let sawRateLimit = false;
 
   for (let attempt = 0; attempt < retries; attempt++) {
     const controller = new AbortController();
@@ -118,6 +130,7 @@ async function fetchWithRetry(url, retries = MAX_RETRIES) {
       trackRateLimit(resp);
 
       if (resp.status === 429) {
+        sawRateLimit = true;
         const retryAfter = parseInt(resp.headers.get('Retry-After') || '5', 10);
         const waitMs = Math.min(retryAfter * 1000, 30000);
         await delay(waitMs);
@@ -155,6 +168,9 @@ async function fetchWithRetry(url, retries = MAX_RETRIES) {
     }
   }
 
+  if (sawRateLimit) {
+    throw new RateLimitError(RATE_LIMIT_ERROR);
+  }
   throw lastError || new Error(chrome.i18n.getMessage('errorRequestFailed') || 'Request failed after retries');
 }
 
@@ -169,6 +185,7 @@ function trackRateLimit(resp) {
         timestamp: Date.now(),
       };
       chrome.storage.local.set({ rateLimitInfo: info });
+      scheduleQuotaResetAlarm(info);
     }
   } catch { /* ignore */ }
 }
@@ -179,6 +196,54 @@ function getRateLimitInfo() {
       resolve(result.rateLimitInfo || null);
     });
   });
+}
+
+function isQuotaExhausted(info) {
+  if (!info || info.remaining === undefined || info.remaining === null) return false;
+  if (info.remaining > 0) return false;
+  if (info.reset) {
+    const resetMs = info.reset * 1000;
+    // Treat as exhausted until reset time (with 5s grace)
+    return Date.now() < resetMs - 5000;
+  }
+  // No reset known — if remaining hit 0 recently (15 min), stay cautious
+  return info.timestamp && (Date.now() - info.timestamp) < 15 * 60 * 1000;
+}
+
+function scheduleQuotaResetAlarm(info) {
+  try {
+    if (!info?.reset) return;
+    // Schedule when quota is low or empty so open pages refresh after reset
+    if (info.remaining == null || info.remaining > 5) {
+      chrome.alarms.clear('quotaResetRefresh');
+      return;
+    }
+    const when = info.reset * 1000 + 2000;
+    if (when <= Date.now()) return;
+    chrome.alarms.create('quotaResetRefresh', { when });
+  } catch { /* alarms unavailable */ }
+}
+
+function formatErrorResponse(e, rateLimit) {
+  const isRate = e instanceof RateLimitError || e?.code === RATE_LIMIT_ERROR || /rate.?limit|429/i.test(e?.message || '');
+  return {
+    success: false,
+    error: isRate ? RATE_LIMIT_ERROR : (e.message || 'Request failed'),
+    errorCode: isRate ? RATE_LIMIT_ERROR : null,
+    rateLimit: rateLimit || null,
+  };
+}
+
+function attachCacheMeta(data, cachedAt, stale) {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    _ggCache: {
+      stale: !!stale,
+      cachedAt: cachedAt || null,
+      ageMs: cachedAt ? Math.max(0, Date.now() - cachedAt) : null,
+    },
+  };
 }
 
 function getBackoffMs(attempt) {
@@ -476,11 +541,10 @@ async function handleLookupByIds(ids, region, sendResponse) {
       sendResponse({ success: false, error: 'No valid IDs provided' });
       return;
     }
-    const results = await fetchPricesBatch(productIds, region);
-    const rateLimit = await getRateLimitInfo();
-    sendResponse({ success: true, data: results, rateLimit });
+    const { results, degraded, rateLimited, rateLimit } = await fetchPricesBatch(productIds, region);
+    sendResponse({ success: true, data: results, rateLimit, degraded, rateLimited });
   } catch (e) {
-    sendResponse({ success: false, error: e.message });
+    sendResponse(formatErrorResponse(e, await getRateLimitInfo()));
   }
 }
 
@@ -498,14 +562,13 @@ async function handleLookupByTitles(titles, region, sendResponse) {
     const mapping = await resolveTitlesToSteamIds(cleanTitles);
     const resolvedIds = Object.values(mapping).filter(Boolean);
     if (resolvedIds.length === 0) {
-      sendResponse({ success: true, data: {}, mapping });
+      sendResponse({ success: true, data: {}, mapping, degraded: false, rateLimited: false });
       return;
     }
-    const results = await fetchPricesBatch(resolvedIds, region);
-    const rateLimit = await getRateLimitInfo();
-    sendResponse({ success: true, data: results, mapping, rateLimit });
+    const { results, degraded, rateLimited, rateLimit } = await fetchPricesBatch(resolvedIds, region);
+    sendResponse({ success: true, data: results, mapping, rateLimit, degraded, rateLimited });
   } catch (e) {
-    sendResponse({ success: false, error: e.message });
+    sendResponse(formatErrorResponse(e, await getRateLimitInfo()));
   }
 }
 
@@ -521,17 +584,16 @@ async function handleSearchSteam(query, region, sendResponse) {
     const json = await fetchWithRetry(url, 2);
 
     if (!json.items || json.items.length === 0) {
-      sendResponse({ success: true, data: {} });
+      sendResponse({ success: true, data: {}, degraded: false, rateLimited: false });
       return;
     }
 
     // Get all result IDs (up to 10)
     const ids = json.items.map((item) => String(item.id));
-    const results = await fetchPricesBatch(ids, region || 'us');
-    const rateLimit = await getRateLimitInfo();
-    sendResponse({ success: true, data: results, rateLimit });
+    const { results, degraded, rateLimited, rateLimit } = await fetchPricesBatch(ids, region || 'us');
+    sendResponse({ success: true, data: results, rateLimit, degraded, rateLimited });
   } catch (e) {
-    sendResponse({ success: false, error: e.message });
+    sendResponse(formatErrorResponse(e, await getRateLimitInfo()));
   }
 }
 
@@ -547,6 +609,18 @@ async function handleGetBundles(ids, region, sendResponse) {
       sendResponse({ success: false, error: 'No valid IDs provided' });
       return;
     }
+    const rateLimit = await getRateLimitInfo();
+    if (isQuotaExhausted(rateLimit)) {
+      sendResponse({
+        success: false,
+        error: RATE_LIMIT_ERROR,
+        errorCode: RATE_LIMIT_ERROR,
+        rateLimit,
+        degraded: true,
+        rateLimited: true,
+      });
+      return;
+    }
     const data = {};
     for (const type of ['app', 'sub', 'bundle']) {
       const group = productIds.filter((item) => item.type === type);
@@ -560,10 +634,9 @@ async function handleGetBundles(ids, region, sendResponse) {
         }
       }
     }
-    const rateLimit = await getRateLimitInfo();
-    sendResponse({ success: true, data, rateLimit });
+    sendResponse({ success: true, data, rateLimit: await getRateLimitInfo() });
   } catch (e) {
-    sendResponse({ success: false, error: e.message });
+    sendResponse(formatErrorResponse(e, await getRateLimitInfo()));
   }
 }
 
@@ -574,25 +647,64 @@ async function handleGetActiveBundles(region, sendResponse) {
     // Cache active bundles for 15 minutes
     if (activeBundlesCache.data && Date.now() - activeBundlesCache.timestamp < 15 * 60 * 1000) {
       const rateLimit = await getRateLimitInfo();
-      sendResponse({ success: true, data: activeBundlesCache.data, rateLimit });
+      sendResponse({
+        success: true,
+        data: activeBundlesCache.data,
+        rateLimit,
+        degraded: isQuotaExhausted(rateLimit),
+        rateLimited: isQuotaExhausted(rateLimit),
+      });
+      return;
+    }
+
+    const rateLimit = await getRateLimitInfo();
+    if (isQuotaExhausted(rateLimit)) {
+      if (activeBundlesCache.data) {
+        sendResponse({
+          success: true,
+          data: activeBundlesCache.data,
+          rateLimit,
+          degraded: true,
+          rateLimited: true,
+        });
+        return;
+      }
+      sendResponse({
+        success: false,
+        error: RATE_LIMIT_ERROR,
+        errorCode: RATE_LIMIT_ERROR,
+        rateLimit,
+        degraded: true,
+        rateLimited: true,
+      });
       return;
     }
 
     const apiKey = await getApiKey();
     const url = `${ACTIVE_BUNDLES_ENDPOINT}?key=${apiKey}&region=${region || 'us'}`;
     const json = await fetchWithRetry(url);
-    const rateLimit = await getRateLimitInfo();
+    const rl = await getRateLimitInfo();
 
     if (json.success && json.data) {
       // API returns { data: { totalCount, bundles: [...] } }
       const bundles = (json.data.bundles || []).filter((bundle) => isBundleActive(bundle));
       activeBundlesCache = { data: bundles, timestamp: Date.now() };
-      sendResponse({ success: true, data: bundles, rateLimit });
+      sendResponse({ success: true, data: bundles, rateLimit: rl });
     } else {
-      sendResponse({ success: false, error: json.error || 'Unknown error', rateLimit });
+      sendResponse({ success: false, error: json.error || 'Unknown error', rateLimit: rl });
     }
   } catch (e) {
-    sendResponse({ success: false, error: e.message });
+    if (activeBundlesCache.data && (e instanceof RateLimitError || e?.code === RATE_LIMIT_ERROR)) {
+      sendResponse({
+        success: true,
+        data: activeBundlesCache.data,
+        rateLimit: await getRateLimitInfo(),
+        degraded: true,
+        rateLimited: true,
+      });
+      return;
+    }
+    sendResponse(formatErrorResponse(e, await getRateLimitInfo()));
   }
 }
 
@@ -603,21 +715,47 @@ async function fetchPricesBatch(ids, region) {
   region = region || 'us';
   const cacheKeyPrefix = `${region}:`;
   const results = {};
-  const uncachedIds = [];
+  const freshIds = [];
+  const staleOrMissing = [];
   const productIds = normalizeSteamProductIds(ids, 'app');
+  const now = Date.now();
+  let degraded = false;
+  let rateLimited = false;
 
   for (const item of productIds) {
     const cached = priceCache[cacheKeyPrefix + item.key];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      results[item.key] = cached.data;
+    if (cached?.data && now - cached.timestamp < CACHE_TTL_MS) {
+      results[item.key] = attachCacheMeta(cached.data, cached.timestamp, false);
+      freshIds.push(item.key);
     } else {
-      uncachedIds.push(item);
+      staleOrMissing.push({ item, cached });
     }
   }
 
-  if (uncachedIds.length > 0) {
+  const rateLimit = await getRateLimitInfo();
+  const quotaDead = isQuotaExhausted(rateLimit);
+
+  // Quota exhausted: serve any stale cache and skip live API calls
+  if (quotaDead && staleOrMissing.length > 0) {
+    rateLimited = true;
+    degraded = true;
+    for (const { item, cached } of staleOrMissing) {
+      if (cached?.data && now - cached.timestamp < STALE_MAX_MS) {
+        results[item.key] = attachCacheMeta(cached.data, cached.timestamp, true);
+      }
+    }
+    return { results, degraded, rateLimited, rateLimit };
+  }
+
+  if (staleOrMissing.length === 0) {
+    return { results, degraded, rateLimited, rateLimit };
+  }
+
+  const toFetch = staleOrMissing.map((x) => x.item);
+
+  try {
     for (const type of ['app', 'sub', 'bundle']) {
-      const idsForType = uncachedIds.filter((item) => item.type === type);
+      const idsForType = toFetch.filter((item) => item.type === type);
       const endpoint = PRICES_ENDPOINTS[type];
       for (let i = 0; i < idsForType.length; i += 100) {
         const batch = idsForType.slice(i, i + 100);
@@ -634,17 +772,38 @@ async function fetchPricesBatch(ids, region) {
           for (const item of batch) {
             const gameData = json.data[item.id];
             if (!gameData) continue;
-            results[item.key] = gameData;
             priceCache[cacheKeyPrefix + item.key] = { data: gameData, timestamp: Date.now() };
+            results[item.key] = attachCacheMeta(gameData, Date.now(), false);
           }
         }
       }
     }
-
     persistCache();
+  } catch (e) {
+    const isRate = e instanceof RateLimitError || e?.code === RATE_LIMIT_ERROR;
+    if (isRate) rateLimited = true;
+    degraded = true;
+
+    // Stale-while-revalidate / fail-open on rate limit or network errors
+    for (const { item, cached } of staleOrMissing) {
+      if (results[item.key]) continue;
+      if (cached?.data && now - cached.timestamp < STALE_MAX_MS) {
+        results[item.key] = attachCacheMeta(cached.data, cached.timestamp, true);
+      }
+    }
+
+    // If we still have nothing and it was a hard rate limit, surface typed error
+    if (Object.keys(results).length === 0 && isRate) {
+      throw e;
+    }
   }
 
-  return results;
+  return {
+    results,
+    degraded,
+    rateLimited,
+    rateLimit: (await getRateLimitInfo()) || rateLimit,
+  };
 }
 
 function persistCache() {
@@ -1413,11 +1572,40 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'checkWishlistPrices') {
     checkWishlistPrices();
   }
+  if (alarm.name === 'quotaResetRefresh') {
+    onQuotaResetRefresh();
+  }
   // Keepalive tick for long GG.deals imports (no-op body; alarm wakes the worker)
   if (alarm.name === 'ggDealsImportKeepAlive' && importJobRunning) {
     try { chrome.runtime.getPlatformInfo(() => {}); } catch { /* ignore */ }
   }
 });
+
+function notifyQuotaReset() {
+  try {
+    chrome.runtime.sendMessage({ action: 'quotaReset' }).catch(() => {});
+  } catch { /* no listeners */ }
+  try {
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs || []) {
+        if (!tab?.id) continue;
+        chrome.tabs.sendMessage(tab.id, { action: 'quotaReset' }).catch(() => {});
+      }
+    });
+  } catch { /* ignore */ }
+}
+
+async function onQuotaResetRefresh() {
+  try {
+    // Clear exhausted state so the next request can hit the live API again
+    await chrome.storage.local.remove(['rateLimitInfo']);
+  } catch { /* ignore */ }
+  notifyQuotaReset();
+  // Refresh price alerts only (open popup/overlay pages re-fetch themselves)
+  try {
+    await checkWishlistPrices();
+  } catch { /* ignore */ }
+}
 
 async function checkWishlistPrices() {
   try {
@@ -1441,7 +1629,8 @@ async function checkWishlistPrices() {
     if (alertItems.length === 0) return;
 
     const ids = alertItems.map((w) => w.id);
-    const prices = await fetchPricesBatch(ids, region);
+    const batch = await fetchPricesBatch(ids, region);
+    const prices = batch?.results || batch || {};
     let wishlistChanged = false;
 
     for (const item of alertItems) {

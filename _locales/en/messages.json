@@ -387,6 +387,26 @@
     "placeholders": { "remaining": { "content": "$1" } }
   },
   "addKey": { "message": "Add Key" },
+  "getFreeKey": { "message": "Get free key" },
+  "sharedKeyLowNudge": { "message": "Shared key almost empty" },
+  "sharedKeyEmptyNudge": { "message": "Shared key empty — add your free API key" },
+  "degradedRateLimited": { "message": "Rate limited — showing cached prices. Add a free API key for live data." },
+  "degradedCached": { "message": "Showing cached prices — live API unavailable." },
+  "cachedLabel": { "message": "Cached" },
+  "cachedMinsAgo": {
+    "message": "Cached · $mins$m ago",
+    "placeholders": { "mins": { "content": "$1" } }
+  },
+  "cachedHoursAgo": {
+    "message": "Cached · $hours$h ago",
+    "placeholders": { "hours": { "content": "$1" } }
+  },
+  "cachedDaysAgo": {
+    "message": "Cached · $days$d ago",
+    "placeholders": { "days": { "content": "$1" } }
+  },
+  "overlayRateLimited": { "message": "Rate limited — add free API key" },
+  "apiQuotaReset": { "message": "API quota reset — refreshing…" },
   "retry": { "message": "Retry" },
 
   "storeSteam": { "message": "Steam" },

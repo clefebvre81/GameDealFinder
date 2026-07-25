@@ -1201,6 +1201,21 @@
       return false;
     }
 
+    if (message.action === 'quotaReset') {
+      if (lastOverlayState && !overlayDismissed && isProductPage()) {
+        const id = lastOverlayState.appId;
+        const title = lastOverlayState.game?.title || lastOverlayState.meta?.titleHint;
+        injectPriceOverlay({
+          id: id || undefined,
+          title: id ? undefined : title,
+          store: lastOverlayState.store,
+          region: lastOverlayState.prefs?.region || 'us',
+        });
+      }
+      sendResponse?.({ ok: true });
+      return false;
+    }
+
     if (message.action === 'scrapeGgDealsShare') {
       const path = window.location.pathname || '';
       if (!/\/wishlist\/share\/[A-Za-z0-9_-]+/i.test(path)) {
@@ -1308,7 +1323,8 @@
         lastOverlayState.game,
         lastOverlayState.store,
         prefs.officialOnly === true,
-        prefs
+        prefs,
+        lastOverlayState.meta || {}
       );
       return;
     }
@@ -1322,7 +1338,8 @@
         lastOverlayState.game,
         lastOverlayState.store,
         prefs.officialOnly === true,
-        prefs
+        prefs,
+        lastOverlayState.meta || {}
       );
       return;
     }
@@ -1446,9 +1463,20 @@
           const firstEntry = Object.entries(searchResp.data).find(([, v]) => v && v.prices);
           if (firstEntry) {
             appId = firstEntry[0];
-            renderOverlay(firstEntry[0], firstEntry[1], opts.store, officialOnly, prefs);
+            renderOverlay(firstEntry[0], firstEntry[1], opts.store, officialOnly, prefs, {
+              degraded: !!searchResp.degraded,
+              rateLimited: !!searchResp.rateLimited,
+            });
             return;
           }
+        }
+        if (searchResp?.rateLimited || searchResp?.errorCode === 'RATE_LIMIT' || searchResp?.error === 'RATE_LIMIT') {
+          renderOverlay(null, null, opts.store, officialOnly, prefs, {
+            degraded: true,
+            rateLimited: true,
+            titleHint: opts.title,
+          });
+          return;
         }
       } catch { /* fallback below */ }
       return;
@@ -1457,8 +1485,21 @@
     if (!appId) return;
 
     chrome.runtime.sendMessage({ action: 'lookupByIds', ids: [appId], region: opts.region || 'us' }, (resp) => {
-      if (!resp || !resp.success || !resp.data[appId]) return;
-      renderOverlay(appId, resp.data[appId], opts.store, officialOnly, prefs);
+      const game = resp?.data?.[appId];
+      if (resp?.success && game?.prices) {
+        renderOverlay(appId, game, opts.store, officialOnly, prefs, {
+          degraded: !!resp.degraded || !!game._ggCache?.stale,
+          rateLimited: !!resp.rateLimited,
+        });
+        return;
+      }
+      // Never fail silently on rate limit — show last-known or empty degraded bar
+      if (resp?.rateLimited || resp?.errorCode === 'RATE_LIMIT' || resp?.error === 'RATE_LIMIT' || resp?.degraded) {
+        renderOverlay(appId, game || null, opts.store, officialOnly, prefs, {
+          degraded: true,
+          rateLimited: true,
+        });
+      }
     });
   }
 
@@ -1713,6 +1754,28 @@
   white-space: nowrap !important; flex-shrink: 0 !important;
   margin: 0 !important; position: static !important; float: none !important;
 }
+.ggbuddy-cache {
+  display: inline-block !important;
+  background: rgba(128,128,128,0.22) !important; color: var(--ggb-muted) !important;
+  padding: 2px 7px !important; border-radius: 4px !important; font-size: 11px !important;
+  font-weight: 700 !important; white-space: nowrap !important; flex-shrink: 0 !important;
+  margin: 0 !important; position: static !important; float: none !important;
+}
+.ggbuddy-rate-strip {
+  pointer-events: auto !important;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  flex-wrap: wrap !important; gap: 8px !important; margin-top: 6px !important;
+  padding: 6px 12px !important; border-radius: 10px !important;
+  background: rgba(220, 100, 20, 0.95) !important; color: #fff !important;
+  font-size: 12px !important; font-weight: 600 !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.2) !important;
+}
+.ggbuddy-bar.is-minimized .ggbuddy-rate-strip,
+.ggbuddy-bar.is-minimized .ggbuddy-cache { display: none !important; }
+.ggbuddy-key-cta {
+  color: #fff !important; font-weight: 800 !important; text-decoration: underline !important;
+  margin: 0 !important; padding: 0 !important; background: none !important; border: none !important;
+}
 .ggbuddy-link {
   display: inline-block !important;
   color: var(--ggb-link) !important; font-weight: 700 !important; font-size: 12px !important;
@@ -1835,21 +1898,37 @@
 `;
   }
 
-  function renderOverlay(appId, game, detectedStore, officialOnly = false, prefs = {}) {
-    const p = game.prices;
-    if (!p) return;
+  function formatOverlayCacheAge(cacheMeta) {
+    if (!cacheMeta?.stale) return '';
+    const ageMs = cacheMeta.ageMs != null
+      ? cacheMeta.ageMs
+      : (cacheMeta.cachedAt ? Math.max(0, Date.now() - cacheMeta.cachedAt) : null);
+    if (ageMs == null) return overlayMsg('cachedLabel', 'Cached');
+    const mins = Math.max(1, Math.round(ageMs / 60000));
+    if (mins < 60) return overlayMsg('cachedMinsAgo', `Cached · ${mins}m ago`, String(mins));
+    const hours = Math.round(mins / 60);
+    if (hours < 48) return overlayMsg('cachedHoursAgo', `Cached · ${hours}h ago`, String(hours));
+    const days = Math.round(hours / 24);
+    return overlayMsg('cachedDaysAgo', `Cached · ${days}d ago`, String(days));
+  }
 
-    const retail = p.currentRetail ? parseFloat(p.currentRetail) : null;
-    let keyshop = p.currentKeyshops ? parseFloat(p.currentKeyshops) : null;
+  function renderOverlay(appId, game, detectedStore, officialOnly = false, prefs = {}, meta = {}) {
+    const p = game?.prices || null;
+    const retail = p?.currentRetail ? parseFloat(p.currentRetail) : null;
+    let keyshop = p?.currentKeyshops ? parseFloat(p.currentKeyshops) : null;
     if (officialOnly) keyshop = null;
-    const currency = p.currency || 'USD';
+    const currency = p?.currency || 'USD';
     const best = (retail !== null && keyshop !== null) ? Math.min(retail, keyshop) : (retail ?? keyshop);
-    if (best === null) return;
+    const degraded = !!(meta.degraded || meta.rateLimited || game?._ggCache?.stale);
+    const rateLimited = !!meta.rateLimited;
 
-    const histRetail = p.historicalRetail ? parseFloat(p.historicalRetail) : Infinity;
-    const histKey = officialOnly ? Infinity : (p.historicalKeyshops ? parseFloat(p.historicalKeyshops) : Infinity);
+    // Allow empty/degraded bar when rate-limited with no prices; otherwise require a best price
+    if (best === null && !rateLimited && !degraded) return;
+
+    const histRetail = p?.historicalRetail ? parseFloat(p.historicalRetail) : Infinity;
+    const histKey = officialOnly ? Infinity : (p?.historicalKeyshops ? parseFloat(p.historicalKeyshops) : Infinity);
     const histLow = Math.min(histRetail, histKey);
-    const isHistLow = histLow !== Infinity && best <= histLow * 1.05;
+    const isHistLow = best !== null && histLow !== Infinity && best <= histLow * 1.05;
 
     const isUnofficialPage = detectedStore && (
       detectedStore.includes('fitgirl-repacks') ||
@@ -1861,10 +1940,11 @@
     const layout = prefs.overlayLayout === 'edge' ? 'edge' : 'rounded';
     const retailStr = retail !== null ? `${retail} ${currency}` : '—';
     const keyStr = keyshop !== null ? `${keyshop} ${currency}` : '—';
-    const bestStr = `${best} ${currency}`;
+    const bestStr = best !== null ? `${best} ${currency}` : '—';
+    const titleText = game?.title || meta.titleHint || '';
 
     removeOverlay();
-    lastOverlayState = { appId, game, store: detectedStore };
+    lastOverlayState = { appId, game, store: detectedStore, prefs, officialOnly, meta };
     overlayEl = document.createElement('div');
     overlayEl.id = 'gg-deals-overlay';
     overlayEl.style.cssText = [
@@ -1890,6 +1970,12 @@
     const riskShort = overlayMsg('overlayBuyLegitShort', 'Buy legit — skip the malware risk');
     const saveLabel = overlayMsg('overlayYouSave', 'You save');
     const buyForLabel = overlayMsg('overlayBuyFor', 'Buy for');
+    const cacheLabel = formatOverlayCacheAge(game?._ggCache) || (degraded ? overlayMsg('cachedLabel', 'Cached') : '');
+    const rateLimitMsg = overlayMsg(
+      'overlayRateLimited',
+      'Rate limited — add free API key'
+    );
+    const getFreeKeyLabel = overlayMsg('getFreeKey', 'Get free key');
 
     let saveBadge = '';
     if (retail !== null && best !== null && retail > best) {
@@ -1908,19 +1994,31 @@
       ? `<span class="ggbuddy-hl">★ ${escapeOverlay(histLabel)}</span>`
       : '';
 
+    const cacheBadge = cacheLabel
+      ? `<span class="ggbuddy-cache">${escapeOverlay(cacheLabel)}</span>`
+      : '';
+
+    const rateLimitStrip = rateLimited || (degraded && best === null)
+      ? `<div class="ggbuddy-rate-strip">
+          <span>${escapeOverlay(rateLimitMsg)}</span>
+          <a class="ggbuddy-key-cta" href="https://gg.deals/settings/" target="_blank" rel="noopener">${escapeOverlay(getFreeKeyLabel)}</a>
+        </div>`
+      : '';
+
     const barClass = [
       'ggbuddy-bar',
       `theme-${theme}`,
       `layout-${layout}`,
       isUnofficialPage ? 'support-nudge' : '',
       overlayMinimized ? 'is-minimized' : '',
+      degraded ? 'is-degraded' : '',
     ].filter(Boolean).join(' ');
 
     const warnBlock = isUnofficialPage
       ? `<span class="ggbuddy-badge ggbuddy-badge-warn">⚠ ${escapeOverlay(riskShort)}</span><span class="ggbuddy-divider" aria-hidden="true"></span>`
       : '';
 
-    const ctaBlock = game.url
+    const ctaBlock = game?.url && best !== null
       ? `<a class="ggbuddy-cta" href="${escapeOverlay(game.url)}" target="_blank" rel="noopener">${escapeOverlay(buyForLabel)} ${escapeOverlay(bestStr)} →</a>`
       : '';
 
@@ -1933,7 +2031,7 @@
             <span class="ggbuddy-mini-price">${escapeOverlay(bestStr)}</span>
             <span class="ggbuddy-mini-hint">tap to expand</span>
             ${warnBlock}
-            <span class="ggbuddy-title" title="${escapeOverlay(game.title || '')}">${escapeOverlay(game.title || '')}</span>
+            <span class="ggbuddy-title" title="${escapeOverlay(titleText)}">${escapeOverlay(titleText)}</span>
             <div class="ggbuddy-prices">
               <div class="ggbuddy-price-col">
                 <span class="ggbuddy-price-label">${escapeOverlay(officialLabel)}</span>
@@ -1947,6 +2045,7 @@
             </div>
             ${saveBadge}
             ${histBadge}
+            ${cacheBadge}
             ${ctaBlock}
             <div class="ggbuddy-actions">
               <div class="ggbuddy-menu" id="ggbuddy-bar-menu" role="menu">
@@ -1959,6 +2058,7 @@
             </div>
           </div>
         </div>
+        ${rateLimitStrip}
       </div>
     `);
 
